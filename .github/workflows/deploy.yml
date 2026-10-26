@@ -18,4 +18,4 @@ jobs:
       - name: Deploy hosting dan aturan Firestore
         env:
           GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/sa.json
-        run: npx --yes firebase-tools@13 deploy --only hosting,firestore:rules,firestore:indexes --project "${{ secrets.FIREBASE_PROJECT_ID }}" --non-interactive
+        un: npx --yes firebase-tools@13 deploy --only hosting --project "${{ secrets.FIREBASE_PROJECT_ID }}" --non-interactive
