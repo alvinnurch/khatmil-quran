@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Khatmil Qur'an — Peserta</title>
+<meta name="description" content="Ambil juz, baca mushaf, dan laporkan bacaan Khatmil Qur'an.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Amiri+Quran&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div class="brand" id="brand">
+      <img id="evLogo" alt="" hidden>
+      <div>
+        <div class="eyebrow" id="evSub">Laporan bacaan bersama</div>
+        <div class="judul" id="evName">Khatmil Qur'an</div>
+      </div>
+    </div>
+    <div class="brand" id="who" hidden>
+      <div class="avatar" id="whoInit">?</div>
+      <div class="salam">Halo, <span id="whoName"></span>!<small class="num" id="whoNim"></small></div>
+    </div>
+    <div class="who">
+      <img id="evLogo2" alt="" hidden style="width:44px;height:44px;object-fit:contain;background:#fff;border-radius:50%;padding:5px">
+      <button class="ibtn" id="logout" type="button" aria-label="Keluar" title="Keluar" hidden><svg class="i" viewBox="0 0 24 24"><path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3"/><path d="M10 17l-5-5 5-5"/><path d="M5 12h11"/></svg></button>
+    </div>
+  </header>
+
+  <p class="note" id="cfgNote" hidden>Konfigurasi Firebase belum diisi. Buka <code>public/js/firebase-config.js</code> dan tempel konfigurasi proyek Anda.</p>
+
+  <section id="authView" class="two" hidden>
+    <div class="tint t-accent" style="display:grid;gap:18px;align-content:space-between;min-height:260px">
+      <span class="chip"><i></i>Khataman bersama</span>
+      <div>
+        <h1 style="font-size:clamp(32px,7vw,46px)">Satu juz darimu,<br>satu khatam bersama.</h1>
+        <p class="muted" style="margin:10px 0 0;color:var(--accent-ink);opacity:.8">Mahasiswa, dosen, dan peserta luar bisa ikut. Ambil juz yang dibagikan sistem, baca langsung di mushaf, lalu laporkan.</p>
+      </div>
+    </div>
+    <div class="panel" style="display:grid;gap:16px;align-content:start">
+      <div class="seg" role="tablist" aria-label="Masuk atau daftar">
+        <button type="button" id="tabMasuk" aria-pressed="true">Masuk</button>
+        <button type="button" id="tabDaftar" aria-pressed="false">Daftar</button>
+      </div>
+      <div style="display:grid;gap:8px">
+        <span style="font-size:13px;font-weight:600">Saya</span>
+        <div class="pilih" id="katPilih" role="radiogroup" aria-label="Kategori peserta">
+          <button type="button" role="radio" data-kat="mahasiswa" aria-checked="true">Mahasiswa Ushuluddin</button>
+          <button type="button" role="radio" data-kat="dosen" aria-checked="false">Dosen</button>
+          <button type="button" role="radio" data-kat="umum" aria-checked="false">Peserta luar</button>
+        </div>
+      </div>
+      <form id="loginForm" novalidate>
+        <label for="lNim"><span id="lNimLbl">NIM</span><input id="lNim" inputmode="numeric" autocomplete="username" placeholder="11210340000123"></label>
+        <label for="lPin">PIN<input id="lPin" type="password" autocomplete="current-password" placeholder="PIN yang dibuat saat mendaftar"></label>
+        <button class="btn" type="submit">Masuk</button>
+        <div class="msg" id="lMsg" role="status"></div>
+      </form>
+      <form id="regForm" novalidate hidden>
+        <label for="rNama">Nama lengkap<input id="rNama" autocomplete="name"></label>
+        <div class="two" style="gap:12px" id="rMhs">
+          <label for="rNim">NIM<input id="rNim" inputmode="numeric" autocomplete="username"></label>
+          <label for="rProdi">Program studi<input id="rProdi" placeholder="Ilmu Hadis"></label>
+        </div>
+        <label for="rHp">No. WhatsApp <span class="muted" style="font-weight:500" id="rHpKet">(opsional)</span><input id="rHp" inputmode="tel" autocomplete="tel" placeholder="0812xxxxxxxx"></label>
+        <label for="rInstansi" id="rInstansiBox" hidden>Asal / instansi <span class="muted" style="font-weight:500">(opsional)</span><input id="rInstansi" placeholder="Mis. alumni, masyarakat sekitar, fakultas lain"></label>
+        <label for="rPin">Buat PIN <span class="muted" style="font-weight:500">(minimal 6 karakter)</span><input id="rPin" type="password" autocomplete="new-password" placeholder="Agar juzmu tidak dilaporkan orang lain"></label>
+        <button class="btn" type="submit">Daftar</button>
+        <div class="msg" id="rMsg" role="status"></div>
+      </form>
+    </div>
+  </section>
+
+  <section id="homeView" class="two-wide" hidden>
+    <div class="stack">
+      <div class="tint t-accent assign" id="assign"></div>
+      <div class="panel" id="boardView">
+        <div class="board-head">
+          <h2>Putaran ke-<span class="num" id="pNo">1</span></h2>
+          <div class="legend"><span><i></i>Kosong</span><span><i class="busy"></i>Dibaca</span><span><i class="done"></i>Selesai</span></div>
+        </div>
+        <div class="grid30" id="grid"></div>
+        <div class="bar"><span id="pBar" style="width:0"></span></div>
+        <p class="muted" style="margin:10px 0 0;font-size:13px" id="pText"></p>
+      </div>
+    </div>
+    <div class="stack">
+      <div class="panel">
+        <h2 style="margin-bottom:6px">Aktivitasku</h2>
+        <div id="stats"></div>
+      </div>
+      <div class="panel">
+        <h2>Riwayat bacaan</h2>
+        <ul class="list" id="myList" style="margin-top:6px"></ul>
+      </div>
+    </div>
+  </section>
+
+  <footer>Panitia? <a href="panitia.html">Masuk ke dasbor panitia</a></footer>
+</div>
+
+<div class="reader" id="reader" hidden>
+  <div class="reader-bar">
+    <div class="in">
+      <button class="ibtn" id="rClose" type="button" aria-label="Kembali" title="Kembali"><svg class="i" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button>
+      <div class="judul"><span>Sedang membaca</span><b id="rTitle"></b></div>
+      <div class="row" style="gap:6px;flex-wrap:nowrap">
+        <button class="ibtn" id="rMode" type="button" aria-label="Mode teks" title="Mode teks"><svg class="i" viewBox="0 0 24 24"><path d="M5 7V5h14v2"/><path d="M12 5v14"/><path d="M9 19h6"/></svg></button>
+        <button class="btn btn-sm" id="rDoneTop" type="button">Selesai</button>
+      </div>
+    </div>
+    <div class="prog"><span id="rProg"></span></div>
+  </div>
+  <div class="scroll" id="rScroll">
+    <div class="page">
+      <div class="note" id="rNotice" hidden style="max-width:600px;margin:0 auto 12px"></div>
+      <div id="halView">
+        <div class="mp-viewport" id="mpView" aria-label="Halaman mushaf, geser ke kanan untuk halaman berikutnya">
+          <div class="mp-track" id="mpTrack" dir="ltr">
+            <div class="mp-slot"><div class="mp-page" lang="ar" dir="rtl"></div></div>
+            <div class="mp-slot"><div class="mp-page" lang="ar" dir="rtl"></div></div>
+            <div class="mp-slot"><div class="mp-page" lang="ar" dir="rtl"></div></div>
+          </div>
+          <div class="mp-shade" id="mpShade"></div>
+        </div>
+        <p class="mp-hint muted" id="mpHint">Geser halaman ke kanan untuk lanjut, seperti membalik mushaf.</p>
+        <div class="mp-nav" dir="rtl">
+          <button class="btn-ghost btn-sm" id="mpPrev" type="button">→ Sebelumnya</button>
+          <span class="muted num" id="mpInfo"></span>
+          <button class="btn btn-sm" id="mpNext" type="button">Berikutnya ←</button>
+        </div>
+      </div>
+      <div class="mushaf" id="mushaf" lang="ar" hidden></div>
+      <div class="finish" id="finishBox">
+        <p class="muted" style="margin:0" id="rEndText">Sudah sampai akhir juz.</p>
+        <div class="row" id="rConfirm"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="kartu" id="kartu" hidden role="dialog" aria-modal="true" aria-labelledby="kJudul">
+  <div class="kartu-in">
+    <div class="kartu-teks">
+      <span class="chip"><i style="background:var(--done)"></i>Bacaan tercatat</span>
+      <h2 id="kJudul">Selamat!</h2>
+      <p class="muted" id="kTeks" style="margin:0"></p>
+      <div class="seg" role="group" aria-label="Format kartu">
+        <button type="button" data-format="story" aria-pressed="true">Story 9:16</button>
+        <button type="button" data-format="feed" aria-pressed="false">Feed 4:5</button>
+      </div>
+      <div class="panel" style="display:grid;gap:12px;padding:16px">
+        <div class="row">
+          <button class="btn pil-ikon" id="kSelfie" type="button">Ambil selfie <span class="bulat"><svg class="i" viewBox="0 0 24 24"><path d="M4 8.5A2 2 0 0 1 6 6.5h2l1.5-2h5l1.5 2h2a2 2 0 0 1 2 2V17a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><circle cx="12" cy="12.5" r="3.5"/></svg></span></button>
+          <input id="kFotoKamera" type="file" accept="image/*" capture="user" class="sr" tabindex="-1" aria-hidden="true">
+          <label class="btn-ghost tombol-file" for="kFotoGaleri"><svg class="i" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3"/><circle cx="9.5" cy="9.5" r="1.5"/><path d="M20 15l-4.5-4.5L6 20"/></svg>Galeri</label>
+          <input id="kFotoGaleri" type="file" accept="image/*" class="sr">
+          <button class="btn-link" id="kTanpaFoto" type="button">Tanpa foto</button>
+        </div>
+        <div class="row">
+          <button class="btn-gold" id="kShare" type="button">Bagikan</button>
+          <button class="btn-ghost" id="kSave" type="button">Simpan gambar</button>
+        </div>
+        <div class="msg" id="kStatus" role="status"></div>
+      </div>
+      <button class="btn-ghost" id="kTutup" type="button" style="justify-self:start">Kembali ke beranda</button>
+    </div>
+    <div class="kartu-pratinjau"><canvas id="kCanvas" width="1080" height="1920" aria-label="Pratinjau kartu"></canvas></div>
+  </div>
+</div>
+
+<div class="kamera" id="kamera" hidden role="dialog" aria-modal="true" aria-label="Kamera selfie">
+  <video id="kVideo" playsinline autoplay muted></video>
+  <div class="kamera-pesan" id="kKameraMsg" role="status">Membuka kamera…</div>
+  <div class="kamera-bar">
+    <button class="kamera-btn" id="kBatal" type="button">Batal</button>
+    <button class="jepret" id="kJepret" type="button" aria-label="Ambil foto" disabled></button>
+    <button class="kamera-btn" id="kBalik" type="button">Balik</button>
+  </div>
+</div>
+
+<script type="module" src="js/peserta.js"></script>
+</body>
+</html>

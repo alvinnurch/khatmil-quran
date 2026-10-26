@@ -1,0 +1,12 @@
+{
+  "name": "khatmil-quran",
+  "private": true,
+  "description": "Aplikasi laporan Khatmil Qur'an: peserta mengambil juz, membaca mushaf, dan melaporkan; panitia memantau jumlah khataman.",
+  "scripts": {
+    "dev": "firebase emulators:start --project demo-khatam",
+    "deploy": "firebase deploy --only hosting,firestore"
+  },
+  "devDependencies": {
+    "firebase-tools": "^13.0.0"
+  }
+}

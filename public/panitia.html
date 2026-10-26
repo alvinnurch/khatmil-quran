@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Khatmil Qur'an — Dasbor Panitia</title>
+<meta name="robots" content="noindex">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div class="brand">
+      <img id="evLogo" alt="" hidden>
+      <div>
+        <div class="eyebrow">Dasbor panitia</div>
+        <div class="judul" id="evName">Khatmil Qur'an</div>
+      </div>
+    </div>
+    <div class="who" id="who" hidden>
+      <span class="muted" id="whoEmail" style="font-size:13px"></span>
+      <button class="ibtn" id="csvBtn" type="button" title="Unduh rekap CSV" aria-label="Unduh rekap CSV"><svg class="i" viewBox="0 0 24 24"><path d="M12 4v11"/><path d="M7 10.5l5 5 5-5"/><path d="M5 20h14"/></svg></button>
+      <button class="ibtn" id="logout" type="button" title="Keluar" aria-label="Keluar"><svg class="i" viewBox="0 0 24 24"><path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3"/><path d="M10 17l-5-5 5-5"/><path d="M5 12h11"/></svg></button>
+    </div>
+  </header>
+
+  <p class="note" id="cfgNote" hidden>Konfigurasi Firebase belum diisi. Buka <code>public/js/firebase-config.js</code> dan tempel konfigurasi proyek Anda.</p>
+
+  <section class="two" id="loginView" hidden>
+    <div class="tint t-accent" style="display:grid;gap:18px;align-content:space-between;min-height:240px">
+      <span class="chip"><i></i>Khusus panitia</span>
+      <h1 style="font-size:clamp(30px,6vw,42px)">Pantau khataman<br>secara langsung.</h1>
+    </div>
+    <div class="panel">
+      <h2>Masuk panitia</h2>
+      <p class="muted" style="margin:4px 0 16px;font-size:14px">Gunakan akun email yang sudah didaftarkan sebagai panitia.</p>
+      <form id="loginForm" novalidate>
+        <label for="lEmail">Email<input id="lEmail" type="email" autocomplete="username"></label>
+        <label for="lPass">Kata sandi<input id="lPass" type="password" autocomplete="current-password"></label>
+        <button class="btn" type="submit">Masuk</button>
+        <div class="msg" id="lMsg" role="status"></div>
+      </form>
+    </div>
+  </section>
+
+  <div id="dash" hidden style="display:grid;gap:16px">
+    <h1 style="font-size:clamp(30px,6vw,42px);margin-top:4px">Rekap khataman</h1>
+    <section class="hero">
+      <div class="tint t-accent" style="display:grid;gap:18px;align-content:space-between">
+        <div class="row" style="justify-content:space-between">
+          <span class="chip"><i></i>Khataman terkumpul</span>
+          <button class="btn pil-ikon btn-sm" id="screenBtn" type="button" style="padding:5px 5px 5px 14px">Mode layar <span class="bulat" style="width:28px;height:28px"><svg class="i" viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="12" rx="2"/><path d="M8 20h8"/><path d="M12 16.5V20"/></svg></span></button>
+        </div>
+        <div class="khatam">
+          <div class="big num"><span id="kCount">0</span><small>kali khatam</small></div>
+          <div class="gauge" id="gauge" aria-label="Progres putaran berjalan">
+            <svg viewBox="0 0 120 120"><circle cx="60" cy="60" r="50" fill="none" stroke="var(--surface)" stroke-width="12"/><circle id="gaugeArc" cx="60" cy="60" r="50" fill="none" stroke="var(--accent)" stroke-width="12" stroke-linecap="round" stroke-dasharray="0 314.16"/></svg>
+            <b class="num" id="gaugeVal">0%</b><small id="gaugeLbl">putaran 1</small>
+          </div>
+        </div>
+        <p style="margin:0;font-size:13px;color:var(--accent-ink);opacity:.85" id="kNext"></p>
+      </div>
+      <div class="tiles">
+        <div class="tile t-mint"><div><span class="ik"><svg class="i" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></span><b class="num" id="tJuz">0</b></div><span>juz selesai (semua putaran)</span></div>
+        <div class="tile t-butter"><div><span class="ik"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 7.5V12l3 2"/></svg></span><b class="num" id="tBaca">0</b></div><span>juz sedang dibaca</span></div>
+        <div class="tile t-sky"><div><span class="ik"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.5"/><path d="M5 20a7 7 0 0 1 14 0"/></svg></span><b class="num" id="tPeserta">0</b></div><span>peserta terdaftar</span></div>
+        <div class="tile t-peach"><div><span class="ik"><svg class="i" viewBox="0 0 24 24"><path d="M12 6.5C10 5 7 4.5 4 5v13c3-.5 6 0 8 1.5 2-1.5 5-2 8-1.5V5c-3-.5-6 0-8 1.5z"/><path d="M12 6.5V19"/></svg></span><b class="num" id="tPembaca">0</b></div><span>peserta sudah membaca</span></div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="board-head">
+        <div><h2>Progres per putaran</h2><p class="muted" style="margin:4px 0 0;font-size:13px">Satu putaran = Juz 1–30. Putaran terhitung khatam setelah ke-30 juznya selesai dibaca.</p></div>
+        <div class="legend"><span><i></i>Kosong</span><span><i class="busy"></i>Dibaca</span><span><i class="done"></i>Selesai</span></div>
+      </div>
+      <div class="rounds" id="rounds"></div>
+    </section>
+
+    <section class="two">
+      <div class="panel">
+        <h2>Juz sedang dibaca</h2>
+        <p class="muted" style="margin:2px 0 8px;font-size:13px">Paling lama di atas. Lepaskan juz yang tidak kunjung dilaporkan agar bisa diambil peserta lain.</p>
+        <ul class="list" id="busyList"></ul>
+      </div>
+      <div class="panel">
+        <h2>Juz selesai per kelompok</h2><p class="muted" style="margin:4px 0 0;font-size:13px">Prodi untuk mahasiswa, ditambah dosen dan peserta luar.</p>
+        <ul class="list prodi" id="prodiList" style="margin-top:10px"></ul>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="board-head">
+        <h2>Peserta</h2>
+        <input id="search" class="search" placeholder="Cari nama, NIM, WA, atau kelompok">
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Nama</th><th>NIM / WhatsApp</th><th>Kelompok</th><th class="num">Juz selesai</th><th>Status</th><th>WhatsApp</th></tr></thead>
+          <tbody id="pesertaBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Pengaturan acara</h2>
+      <p class="muted" style="margin:4px 0 0;font-size:13px">Nama, logo, warna, dan tagar ini tampil di halaman peserta dan di kartu selfie yang mereka bagikan.</p>
+      <form id="setForm" class="two" style="align-items:start;margin-top:14px">
+        <div style="display:grid;gap:12px">
+          <label for="sName">Nama acara<input id="sName" placeholder="Khatmil Qur'an"></label>
+          <label for="sSub">Keterangan<input id="sSub" placeholder="Milad Fakultas Ushuluddin"></label>
+          <label for="sTagar">Tagar media sosial <span class="muted" style="font-weight:400">(opsional)</span><input id="sTagar" placeholder="#KhatmilQuranFU #MiladFU"></label>
+          <div style="display:grid;gap:8px">
+            <span style="font-size:13px;font-weight:600">Warna tema acara</span>
+            <div class="swatches" id="sWarnaPreset" role="group" aria-label="Pilihan warna"></div>
+            <div class="row">
+              <label class="warna-custom" for="sWarna"><input id="sWarna" type="color" value="#1f5c47"><span>Warna lain</span></label>
+              <span class="muted num" id="sWarnaHex" style="font-size:13px"></span>
+              <button class="btn-link" id="sWarnaReset" type="button">Pakai warna bawaan</button>
+            </div>
+            <span class="muted" style="font-size:12px">Langsung terlihat di halaman ini sebagai pratinjau. Peserta melihatnya setelah disimpan.</span>
+          </div>
+        </div>
+        <div style="display:grid;gap:10px">
+          <span style="font-size:13px;font-weight:600">Logo acara</span>
+          <div class="logo-box"><img id="sLogoPrev" alt="Pratinjau logo" hidden><span class="muted" id="sLogoKosong">Belum ada logo</span></div>
+          <div class="row">
+            <label class="btn-ghost btn-sm tombol-file" for="sLogo">Unggah logo</label>
+            <input id="sLogo" type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" class="sr">
+            <button class="btn-link" id="sLogoHapus" type="button" hidden>Hapus logo</button>
+          </div>
+          <span class="muted" style="font-size:12px">PNG transparan paling bagus. Gambar diperkecil otomatis.</span>
+        </div>
+        <div class="row"><button class="btn" type="submit">Simpan pengaturan</button><span class="msg" id="sMsg"></span></div>
+      </form>
+    </section>
+  </div>
+
+  <footer><a href="./">Halaman peserta</a></footer>
+</div>
+
+<div class="screen" id="screen" hidden>
+  <button class="btn-ghost exit" id="screenExit" type="button">Tutup</button>
+  <div>
+    <img id="scLogo" alt="" hidden>
+    <div class="sub" id="scName">Khatmil Qur'an</div>
+    <div class="big num" id="scKhatam">0</div>
+    <div class="sub">kali khatam · <span class="num" id="scJuz">0</span> juz dibaca</div>
+  </div>
+</div>
+
+<script type="module" src="js/panitia.js"></script>
+</body>
+</html>

@@ -1,0 +1,67 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function masuk() { return request.auth != null; }
+    function emailSaya() { return request.auth.token.email; }
+    // Akun peserta berbentuk <nim>@peserta.khatam (lihat public/js/firebase-config.js)
+    function peserta() { return masuk() && emailSaya() != null && emailSaya().matches('.*@peserta[.]khatam$'); }
+    function nimSaya() { return emailSaya().split('@')[0]; }
+    function panitia() {
+      return masuk() && emailSaya() != null
+        && exists(/databases/$(database)/documents/admins/$(emailSaya().lower()));
+    }
+
+    // Daftar panitia. Diisi manual lewat Firebase Console (ID dokumen = email panitia).
+    match /admins/{email} {
+      allow read: if masuk() && emailSaya().lower() == email;
+      allow write: if false;
+    }
+
+    // Nama dan keterangan acara: terbuka untuk dibaca, hanya panitia yang mengubah.
+    match /pengaturan/{id} {
+      allow read: if true;
+      allow write: if panitia();
+    }
+
+    // Penghitung pembagian juz (putaran berjalan, juz yang sudah diambil, juz yang dikembalikan).
+    match /state/{id} {
+      allow read: if masuk();
+      allow write: if (peserta() || panitia())
+        && request.resource.data.keys().hasOnly(['putaran', 'terambil', 'kosong'])
+        && request.resource.data.putaran is int
+        && request.resource.data.terambil is list && request.resource.data.terambil.size() <= 30;
+    }
+
+    match /peserta/{nim} {
+      allow read: if (peserta() && nimSaya() == nim) || panitia();
+      allow create: if peserta() && nimSaya() == nim
+        && request.resource.data.nim == nim
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.aktif == null;
+      allow update: if (peserta() && resource.data.uid == request.auth.uid
+                        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['aktif']))
+                    || panitia();
+      allow delete: if panitia();
+    }
+
+    match /bacaan/{id} {
+      allow read: if masuk();
+      allow create: if peserta()
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.nim == nimSaya()
+        && request.resource.data.status == 'membaca'
+        && id == 'p' + string(request.resource.data.putaran) + '-j' + string(request.resource.data.juz)
+        && request.resource.data.juz >= 1 && request.resource.data.juz <= 30;
+      // Peserta hanya boleh menandai juznya sendiri selesai.
+      allow update: if (peserta() && resource.data.uid == request.auth.uid
+                        && resource.data.status == 'membaca'
+                        && request.resource.data.status == 'selesai'
+                        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'selesai']))
+                    || panitia();
+      // Peserta boleh mengembalikan juz yang belum selesai; panitia boleh melepaskan juz siapa pun.
+      allow delete: if (peserta() && resource.data.uid == request.auth.uid && resource.data.status == 'membaca')
+                    || panitia();
+    }
+  }
+}
