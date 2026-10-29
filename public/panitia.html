@@ -172,15 +172,72 @@
   <footer><a href="./">Halaman peserta</a></footer>
 </div>
 
-<div class="screen" id="screen" hidden>
-  <button class="btn-ghost exit" id="screenExit" type="button">Tutup</button>
-  <div>
-    <img id="scLogo" alt="" hidden>
-    <div class="sub" id="scName">Khatmil Qur'an</div>
-    <div class="big num" id="scKhatam">0</div>
-    <div class="sub">kali khatam · <span class="num" id="scJuz">0</span> juz dibaca</div>
-  </div>
+<div class="layar" id="screen" hidden role="dialog" aria-modal="true" aria-label="Layar acara">
+  <header class="layar-top">
+    <div class="brand">
+      <img id="scLogo" alt="" hidden>
+      <div><div class="eyebrow" id="scSub"></div><div class="judul" id="scName">Khatmil Qur'an</div></div>
+    </div>
+    <div class="seg layar-tab" role="tablist" aria-label="Tampilan layar">
+      <button type="button" role="tab" data-tab="hadir" aria-pressed="true">Check-in peserta</button>
+      <button type="button" role="tab" data-tab="juz" aria-pressed="false">Juz dibaca</button>
+      <button type="button" role="tab" data-tab="khatam" aria-pressed="false">Khatam</button>
+    </div>
+    <div class="row" style="gap:6px;justify-content:flex-end">
+      <button class="btn-ghost btn-sm" id="scPutar" type="button" aria-pressed="false" title="Ganti tab otomatis setiap 15 detik">Putar otomatis</button>
+      <button class="btn-ghost btn-sm" id="screenExit" type="button">Tutup</button>
+    </div>
+  </header>
+
+  <section class="layar-isi lp-hadir" data-panel="hadir">
+    <div class="tint t-accent lp-kiri">
+      <select id="scSesi" class="lp-sesi" aria-label="Sesi yang ditampilkan"></select>
+      <div><div class="lp-angka num" id="scHadir">0</div><div class="lp-lbl">sudah check-in</div></div>
+      <div class="lp-qr" id="scQrBox" hidden>
+        <div class="lp-qr-gbr" id="scQr"></div>
+        <div><b class="num" id="scKode"></b><span>Scan untuk check-in, atau ketik kode ini di aplikasi.</span></div>
+      </div>
+    </div>
+    <div class="panel lp-kanan">
+      <div class="lp-sambut" id="scSambut" hidden></div>
+      <div class="lp-judul"><h2>Baru saja hadir</h2><span class="muted" id="scHadirKet"></span></div>
+      <ol class="lp-feed" id="scFeed"></ol>
+    </div>
+  </section>
+
+  <section class="layar-isi lp-juz" data-panel="juz" hidden>
+    <div class="panel lp-kiri">
+      <div class="lp-judul"><h2 id="scPutaran">Putaran 1</h2><span class="muted num" id="scPutaranKet"></span></div>
+      <div class="lp-grid" id="scGrid"></div>
+      <div class="legend" style="font-size:14px"><span><i></i>Belum diambil</span><span><i class="busy"></i>Sedang dibaca</span><span><i class="done"></i>Selesai</span></div>
+    </div>
+    <div class="panel lp-kanan">
+      <div class="lp-judul"><h2>Baru selesai membaca</h2></div>
+      <ol class="lp-feed" id="scSelesai"></ol>
+    </div>
+  </section>
+
+  <section class="layar-isi lp-khatam" data-panel="khatam" hidden>
+    <div class="tint t-accent lp-khatam-utama">
+      <div class="lp-lbl">Khataman terkumpul</div>
+      <div class="big num" id="scKhatam">0</div>
+      <div class="lp-lbl">kali khatam Al-Qur'an</div>
+    </div>
+    <div class="lp-khatam-sisi">
+      <div class="panel lp-ring-box">
+        <div class="gauge lp-ring"><svg viewBox="0 0 120 120"><circle cx="60" cy="60" r="50" fill="none" stroke="var(--sunk)" stroke-width="12"/><circle id="scArc" cx="60" cy="60" r="50" fill="none" stroke="var(--accent)" stroke-width="12" stroke-linecap="round" stroke-dasharray="0 314.16"/></svg><b class="num" id="scPct">0%</b></div>
+        <div><h2 id="scKhatamBerikut">Menuju khatam ke-1</h2><p class="muted" id="scKhatamKet" style="margin:6px 0 0"></p></div>
+      </div>
+      <div class="tiles">
+        <div class="tile t-mint"><b class="num" id="scJuz">0</b><span>juz selesai dibaca</span></div>
+        <div class="tile t-sky"><b class="num" id="scPembaca">0</b><span>pembaca</span></div>
+        <div class="tile t-butter"><b class="num" id="scDibaca">0</b><span>juz sedang dibaca</span></div>
+        <div class="tile t-peach"><b class="num" id="scHadirTot">0</b><span>check-in hari ini</span></div>
+      </div>
+    </div>
+  </section>
 </div>
+
 
 <div class="screen qr-layar" id="qrLayar" hidden role="dialog" aria-modal="true" aria-label="QR kehadiran">
   <button class="btn-ghost exit" id="qrTutup" type="button">Tutup</button>
