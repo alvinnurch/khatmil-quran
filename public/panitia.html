@@ -124,7 +124,16 @@
 
     <section class="panel">
       <div class="board-head">
-        <h2>Peserta</h2>
+        <div><h2>Peserta</h2><p class="muted" style="margin:4px 0 0;font-size:13px">Impor daftar peserta dari template. Peserta yang diimpor tidak perlu mendaftar: cukup pilih <b>Pertama kali masuk</b>, isi NIM (atau WA) dan buat PIN.</p></div>
+        <div class="row">
+          <button class="btn-ghost btn-sm" id="pTemplate" type="button">Unduh template peserta</button>
+          <label class="btn btn-sm tombol-file" for="pImpor">Impor peserta (CSV)</label>
+          <input id="pImpor" type="file" accept=".csv,text/csv" class="sr">
+        </div>
+      </div>
+      <div class="msg" id="pMsg" role="status" style="margin-bottom:8px"></div>
+      <div class="board-head" style="margin-bottom:8px">
+        <span class="muted" id="pRingkas" style="font-size:13px"></span>
         <input id="search" class="search" placeholder="Cari nama, NIM, WA, atau kelompok">
       </div>
       <div class="table-wrap">

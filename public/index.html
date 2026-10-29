@@ -54,8 +54,11 @@
       </div>
       <form id="loginForm" novalidate>
         <label for="lNim"><span id="lNimLbl">NIM</span><input id="lNim" inputmode="numeric" autocomplete="username" placeholder="11210340000123"></label>
-        <label for="lPin">PIN<input id="lPin" type="password" autocomplete="current-password" placeholder="PIN yang dibuat saat mendaftar"></label>
-        <button class="btn" type="submit">Masuk</button>
+        <label for="lPin"><span id="lPinLbl">PIN</span><input id="lPin" type="password" autocomplete="current-password" placeholder="PIN yang dibuat saat mendaftar"></label>
+        <label for="lWa" id="lWaBox" hidden>No. WhatsApp <span class="muted" style="font-weight:500">(untuk verifikasi)</span><input id="lWa" inputmode="tel" autocomplete="tel" placeholder="Nomor yang diberikan ke panitia">
+          <span class="bantu">Tiket QR akan dikirim ke nomor WhatsApp ini.</span></label>
+        <button class="btn" type="submit" id="lKirim">Masuk</button>
+        <button class="btn-link" type="button" id="lPertama" style="justify-self:start">Datamu sudah diinput panitia? Pertama kali masuk di sini</button>
         <div class="msg" id="lMsg" role="status"></div>
       </form>
       <form id="regForm" novalidate hidden>
