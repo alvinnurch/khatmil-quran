@@ -346,3 +346,14 @@ a.btn-gold{color:#fff}
 @media (max-width:900px){.layar{overflow:auto}.layar-top{grid-template-columns:1fr;justify-items:start}.layar-isi,.lp-khatam{grid-template-columns:minmax(0,1fr)}.lp-grid{min-height:420px}}
 @media (prefers-reduced-motion:reduce){.lp-feed li.baru,.lp-sambut{animation:none}}
 .lp-feed{-webkit-mask-image:linear-gradient(to bottom,#000 82%,transparent);mask-image:linear-gradient(to bottom,#000 82%,transparent)}
+/* reset & hapus data */
+.zona-list{display:grid;gap:10px}
+.zona-item{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;padding:14px 16px;border-radius:var(--r-md);background:var(--sunk)}
+.zona-item b{font-size:15px}
+.zona-item p{margin:4px 0 0;font-size:13px;max-width:62ch}
+.zona-item>div{flex:1 1 260px}
+.zona-semua{background:var(--peach)}
+.zona-btn{color:var(--danger);border-color:currentColor}
+.zona-konfirm{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.zona-konfirm input{width:140px;padding:9px 12px;background:var(--surface);border-color:var(--line);text-transform:uppercase;letter-spacing:.08em;font-weight:700}
+.btn-bahaya{background:var(--danger);color:#fff}
