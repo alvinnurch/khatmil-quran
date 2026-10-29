@@ -6,6 +6,7 @@ import { terapkanTema, ikon, inisial, alokasiJuz, idDariWa, KATEGORI, kelompok, 
 import { auth, db, configBelumDiisi, emailNim, isAkunPeserta, nimDariUser, JUZ, rentangJuz, $, esc, angkaArab, bersihkanNim, lalu, setMsg, pesanError, kosongkanJuz } from "./common.js";
 
 let me = null;            // dokumen peserta
+let profilDicek = false, sedangDaftar = false, daftarUlangSiap = false;
 let mine = [];            // bacaan milik peserta
 let papan = [];           // bacaan pada putaran yang sedang berjalan
 let putaranAktif = 1;
@@ -39,6 +40,7 @@ onSnapshot(doc(db, "pengaturan", "acara"), s => {
 }, () => {});
 
 onAuthStateChanged(auth, async user => {
+  profilDicek = false; daftarUlangSiap = false;
   unsub.forEach(f => f()); unsub = [];
   if (unsubPapan) { unsubPapan(); unsubPapan = null; }
   me = null; mine = []; papan = []; hadirSaya = [];
@@ -53,7 +55,7 @@ onAuthStateChanged(auth, async user => {
   }
   const nim = nimDariUser(user);
   unsub.push(onSnapshot(doc(db, "peserta", nim), s => {
-    me = s.exists() ? s.data() : null; render();
+    me = s.exists() ? s.data() : null; profilDicek = true; render();
     if (me && kodeTunda) { const k = kodeTunda; kodeTunda = ""; try { sessionStorage.removeItem("khatam.hadir"); } catch {} checkIn(k); }
     if (me && (tiketBaru || tiketTunda)) { const baru = tiketBaru; tiketBaru = false; tiketTunda = false; bukaTiket(baru); }
   }));
@@ -74,7 +76,9 @@ onAuthStateChanged(auth, async user => {
 function render() {
   const user = auth.currentUser;
   const masuk = !!(user && isAkunPeserta(user) && me);
-  $("authView").hidden = !!(user && isAkunPeserta(user));
+  const butuhProfil = !!(user && isAkunPeserta(user) && profilDicek && !me && !sedangDaftar);
+  $("authView").hidden = !!(user && isAkunPeserta(user)) && !butuhProfil;
+  if (butuhProfil) siapkanDaftarUlang(user);
   $("homeView").hidden = !masuk;
   $("who").hidden = !masuk;
   $("brand").hidden = masuk;
@@ -165,6 +169,8 @@ $("loginForm").addEventListener("submit", async e => {
 
 $("regForm").addEventListener("submit", async e => {
   e.preventDefault();
+  const akun = auth.currentUser && isAkunPeserta(auth.currentUser) && !me ? auth.currentUser : null;
+  if (akun) return daftarUlang(akun);
   const mhs = kategori === "mahasiswa";
   const nama = $("rNama").value.trim().replace(/\s+/g, " ");
   const hp = $("rHp").value.trim(), pin = $("rPin").value;
@@ -178,13 +184,14 @@ $("regForm").addEventListener("submit", async e => {
   if (pin.length < 6) return setMsg("rMsg", "PIN minimal 6 karakter.", "err");
   setMsg("rMsg", "Mendaftarkan…");
   try {
-    tiketBaru = true;
+    tiketBaru = true; sedangDaftar = true;
     const cred = await createUserWithEmailAndPassword(auth, emailNim(id), pin);
     await setDoc(doc(db, "peserta", id.toLowerCase()), { nim: id.toLowerCase(), nama, kategori, prodi, instansi, hp: "0" + waId.slice(4),
       tiket: kodeAcak(8), uid: cred.user.uid, aktif: null, daftar: Date.now() });
+    sedangDaftar = false;
     setMsg("rMsg", ""); $("regForm").reset();
   } catch (err) {
-    tiketBaru = false;
+    tiketBaru = false; sedangDaftar = false;
     setMsg("rMsg", err?.code === "auth/email-already-in-use" ? `${mhs ? "NIM" : "Nomor WhatsApp"} ini sudah terdaftar. Silakan masuk.` : pesanError(err), "err");
   }
 });
@@ -605,3 +612,34 @@ $("tSimpan").addEventListener("click", async () => {
   try { await unduhBerkas(blob, `tiket-${me.nim}.png`); setMsg("tMsg", "Gambar tiket disimpan.", "ok"); }
   catch { setMsg("tMsg", "Penyimpanan dibatalkan.", "err"); }
 });
+
+/* ---------- daftar ulang (data peserta dihapus panitia, akun login masih ada) ---------- */
+function siapkanDaftarUlang(user) {
+  if (daftarUlangSiap) return;
+  daftarUlangSiap = true;
+  const id = nimDariUser(user), lewatWa = id.startsWith("wa62");
+  tab(true);
+  pilihKategori(lewatWa ? "umum" : "mahasiswa");
+  if (lewatWa) $("rHp").value = "0" + id.slice(4); else $("rNim").value = id;
+  $("rPin").closest("label").hidden = true;
+  $("rMsg").innerHTML = `Data pendaftaranmu sudah dihapus panitia. Lengkapi lagi untuk ikut. Bukan kamu? <button class="btn-link" type="button" id="rKeluar">Keluar</button>`;
+  $("rMsg").className = "msg err";
+  $("rKeluar").addEventListener("click", () => signOut(auth));
+}
+async function daftarUlang(akun) {
+  const id = nimDariUser(akun), lewatWa = id.startsWith("wa62"), mhs = kategori === "mahasiswa";
+  if (mhs && lewatWa) return setMsg("rMsg", "Akun ini memakai nomor WhatsApp. Pilih Dosen atau Peserta luar.", "err");
+  if (!mhs && !lewatWa) return setMsg("rMsg", "Akun ini memakai NIM. Pilih Mahasiswa Ushuluddin.", "err");
+  const nama = $("rNama").value.trim().replace(/\s+/g, " "), hp = $("rHp").value.trim(), waId = idDariWa(hp);
+  const prodi = mhs ? $("rProdi").value.trim() : KATEGORI[kategori];
+  if (!nama) return setMsg("rMsg", "Nama lengkap wajib diisi.", "err");
+  if (mhs && !prodi) return setMsg("rMsg", "Program studi wajib diisi.", "err");
+  if (!waId) return setMsg("rMsg", "Isi nomor WhatsApp yang benar (mis. 0812…). Tiket QR dikirim ke nomor ini.", "err");
+  setMsg("rMsg", "Menyimpan…");
+  try {
+    tiketBaru = true;
+    await setDoc(doc(db, "peserta", id), { nim: id, nama, kategori, prodi, instansi: kategori === "umum" ? $("rInstansi").value.trim() : "",
+      hp: "0" + waId.slice(4), tiket: kodeAcak(8), uid: akun.uid, aktif: null, daftar: Date.now() });
+    $("rPin").closest("label").hidden = false; $("regForm").reset(); setMsg("rMsg", "");
+  } catch (err) { tiketBaru = false; setMsg("rMsg", pesanError(err), "err"); }
+}

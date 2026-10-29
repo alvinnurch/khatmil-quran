@@ -109,6 +109,7 @@ function render() {
 
   renderPeserta();
   renderLayar();
+  renderZona();
 }
 
 function renderPeserta() {
@@ -121,8 +122,9 @@ function renderPeserta() {
   $("pesertaBody").innerHTML = rows.length ? rows.map(p => {
     const aktif = p.aktif ? bacaan.find(r => r._id === p.aktif) : null;
     return `<tr><td class="wrap">${esc(p.nama)}</td><td class="num">${esc(tampilId(p))}</td><td>${esc(kelompok(p))}${p.instansi ? `<span class="muted"> · ${esc(p.instansi)}</span>` : ""}</td><td class="num">${hitung[p.nim] || 0}</td>
-      <td>${aktif ? `<span class="pill busy">Membaca juz ${aktif.juz}</span>` : `<span class="muted">—</span>`}</td><td>${p.hp ? `${esc(p.hp)} <a class="btn-link" href="${tautanWaTiket(p)}" target="_blank" rel="noopener">Kirim tiket</a>` : `<span class="muted">—</span>`}</td></tr>`;
-  }).join("") : `<tr><td colspan="6" class="empty">${peserta.length ? "Tidak ada yang cocok." : "Belum ada peserta terdaftar."}</td></tr>`;
+      <td>${aktif ? `<span class="pill busy">Membaca juz ${aktif.juz}</span>` : `<span class="muted">—</span>`}</td><td>${p.hp ? `${esc(p.hp)} <a class="btn-link" href="${tautanWaTiket(p)}" target="_blank" rel="noopener">Kirim tiket</a>` : `<span class="muted">—</span>`}</td>
+      <td><button class="btn-link" data-hapus-peserta="${esc(p.nim)}" type="button">Hapus</button></td></tr>`;
+  }).join("") : `<tr><td colspan="7" class="empty">${peserta.length ? "Tidak ada yang cocok." : "Belum ada peserta terdaftar."}</td></tr>`;
 }
 
 /* ---------- aksi ---------- */
@@ -251,6 +253,7 @@ function renderHadir() {
     : `<tr><td colspan="7" class="empty">${hadirList.length ? "Tidak ada yang cocok." : "Belum ada yang check-in."}</td></tr>`;
   if (qrKode) $("qrJumlah").textContent = jumlah[qrKode] || 0;
   renderLayar();
+  renderZona();
 }
 const barisHadir = f => hadirList.filter(h => !f || h.sesi === f).sort((a, b) => (b.waktu || 0) - (a.waktu || 0));
 $("hFilter").addEventListener("change", renderHadir);
@@ -529,3 +532,111 @@ async function renderLayar() {
   const awalHari = new Date(); awalHari.setHours(0, 0, 0, 0);
   $("scHadirTot").textContent = hadirList.filter(h => (h.waktu || 0) >= awalHari.getTime()).length;
 }
+
+/* ---------- reset & hapus data ---------- */
+async function hapusBanyak(refs) {
+  for (let i = 0; i < refs.length; i += 400) {
+    const b = writeBatch(db);
+    refs.slice(i, i + 400).forEach(r => b.delete(r));
+    await b.commit();
+  }
+}
+const STATE_AWAL = { putaran: 1, terambil: [], kosong: [] };
+const AKSI = {
+  bacaan: {
+    judul: "Reset bacaan & khataman",
+    ket: () => `Menghapus ${bacaan.length} catatan bacaan. Khataman kembali 0, pembagian juz mulai lagi dari Putaran 1 Juz 1. Peserta dan kehadiran tetap.`,
+    jalan: async () => {
+      const n = bacaan.length;
+      await hapusBanyak(bacaan.map(r => doc(db, "bacaan", r._id)));
+      const b = writeBatch(db);
+      b.set(doc(db, "state", "alokasi"), STATE_AWAL);
+      peserta.filter(p => p.aktif).forEach(p => b.update(doc(db, "peserta", p.nim), { aktif: null }));
+      await b.commit();
+      return `${n} catatan bacaan dihapus. Khataman kembali 0.`;
+    },
+  },
+  hadir: {
+    judul: "Hapus data kehadiran",
+    ket: () => `Menghapus ${hadirList.length} catatan check-in dari semua sesi. Sesi dan QR-nya tetap bisa dipakai.`,
+    jalan: async () => { const n = hadirList.length; await hapusBanyak(hadirList.map(h => doc(db, "hadir", h._id))); return `${n} catatan kehadiran dihapus.`; },
+  },
+  sesi: {
+    judul: "Hapus semua sesi",
+    ket: () => `Menghapus ${sesiList.length} sesi beserta ${hadirList.length} catatan kehadirannya. QR lama tidak berlaku lagi.`,
+    jalan: async () => {
+      const n = sesiList.length;
+      await hapusBanyak([...hadirList.map(h => doc(db, "hadir", h._id)), ...sesiList.map(x => doc(db, "sesi", x.kode))]);
+      return `${n} sesi dan kehadirannya dihapus.`;
+    },
+  },
+  peserta: {
+    judul: "Hapus semua peserta",
+    ket: () => `Menghapus ${peserta.length} data peserta. Juz yang sedang mereka pegang dikembalikan. Riwayat bacaan dan kehadiran tetap. Peserta bisa mendaftar ulang dengan NIM/WA dan PIN yang sama.`,
+    jalan: async () => {
+      const n = peserta.length;
+      for (const r of bacaan.filter(r => r.status === "membaca")) { try { await kosongkanJuz(r._id); } catch {} }
+      await hapusBanyak(peserta.map(p => doc(db, "peserta", p.nim)));
+      return `${n} data peserta dihapus.`;
+    },
+  },
+  semua: {
+    judul: "Reset seluruh acara",
+    ket: () => `Menghapus semua peserta (${peserta.length}), bacaan (${bacaan.length}), sesi (${sesiList.length}), dan kehadiran (${hadirList.length}). Acara kembali kosong seperti baru. Pengaturan acara dan akun panitia tetap.`,
+    jalan: async () => {
+      const ringkasan = `${peserta.length} peserta, ${bacaan.length} bacaan, ${sesiList.length} sesi, ${hadirList.length} kehadiran dihapus.`;
+      await hapusBanyak([...bacaan.map(r => doc(db, "bacaan", r._id)), ...hadirList.map(h => doc(db, "hadir", h._id)),
+        ...sesiList.map(x => doc(db, "sesi", x.kode)), ...peserta.map(p => doc(db, "peserta", p.nim))]);
+      await setDoc(doc(db, "state", "alokasi"), STATE_AWAL);
+      return ringkasan;
+    },
+  },
+};
+let zonaBuka = null, zonaSibuk = false;
+function renderZona(paksa = false) {
+  if (zonaSibuk || (zonaBuka && !paksa)) return;   // jangan ganggu kolom konfirmasi yang sedang diisi
+  $("zList").innerHTML = Object.entries(AKSI).map(([id, a]) => `
+    <div class="zona-item ${id === "semua" ? "zona-semua" : ""}">
+      <div style="min-width:0"><b>${a.judul}</b><p class="muted">${esc(a.ket())}</p></div>
+      ${zonaBuka === id ? `
+        <form class="zona-konfirm" data-konfirm="${id}" novalidate>
+          <label for="zKetik-${id}" class="sr">Ketik HAPUS untuk konfirmasi</label>
+          <input id="zKetik-${id}" placeholder="Ketik HAPUS" autocomplete="off" autocapitalize="characters">
+          <button class="btn-bahaya btn-sm" type="submit">Ya, hapus</button>
+          <button class="btn-ghost btn-sm" type="button" data-batal>Batal</button>
+        </form>` : `<button class="btn-ghost btn-sm zona-btn" type="button" data-zona="${id}">${id === "bacaan" ? "Reset" : id === "semua" ? "Reset semua" : "Hapus"}</button>`}
+    </div>`).join("");
+  if (zonaBuka) $("zKetik-" + zonaBuka)?.focus();
+}
+$("zList").addEventListener("click", e => {
+  const b = e.target.closest("button"); if (!b) return;
+  if (b.dataset.zona) { zonaBuka = b.dataset.zona; setMsg("zMsg", ""); renderZona(true); }
+  else if (b.hasAttribute("data-batal")) { zonaBuka = null; renderZona(true); }
+});
+$("zList").addEventListener("submit", async e => {
+  e.preventDefault();
+  const id = e.target.dataset.konfirm, a = AKSI[id];
+  if ($("zKetik-" + id).value.trim().toUpperCase() !== "HAPUS") return setMsg("zMsg", 'Ketik kata HAPUS di kolom konfirmasi untuk melanjutkan.', "err");
+  zonaSibuk = true; e.target.querySelectorAll("button,input").forEach(x => { x.disabled = true; });
+  setMsg("zMsg", "Menghapus…");
+  try { const hasil = await a.jalan(); setMsg("zMsg", hasil, "ok"); }
+  catch (err) { setMsg("zMsg", "Gagal menghapus: " + pesanError(err), "err"); }
+  zonaSibuk = false; zonaBuka = null; renderZona(true);
+});
+$("zBackup").addEventListener("click", async () => {
+  const data = { dibuat: new Date().toISOString(), acara, peserta, bacaan, sesi: sesiList, hadir: hadirList };
+  try { await unduhBerkas(new Blob([JSON.stringify(data, null, 2)], { type: "application/json" }), `cadangan-khatmil-quran-${new Date().toISOString().slice(0, 10)}.json`); setMsg("zMsg", "Cadangan diunduh.", "ok"); }
+  catch { setMsg("zMsg", "Unduhan dibatalkan.", "err"); }
+});
+
+// hapus satu peserta dari tabel
+$("pesertaBody").addEventListener("click", async e => {
+  const nim = e.target.dataset.hapusPeserta; if (!nim) return;
+  if (!e.target.dataset.armed) { e.target.dataset.armed = "1"; e.target.textContent = "Yakin hapus?"; return; }
+  e.target.disabled = true;
+  try {
+    const p = peserta.find(x => x.nim === nim);
+    if (p?.aktif) { try { await kosongkanJuz(p.aktif); } catch {} }
+    await deleteDoc(doc(db, "peserta", nim));
+  } catch (err) { e.target.textContent = "Gagal"; }
+});
