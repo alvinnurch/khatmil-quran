@@ -129,7 +129,7 @@
       </div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Nama</th><th>NIM / WhatsApp</th><th>Kelompok</th><th class="num">Juz selesai</th><th>Status</th><th>WhatsApp</th></tr></thead>
+          <thead><tr><th>Nama</th><th>NIM / WhatsApp</th><th>Kelompok</th><th class="num">Juz selesai</th><th>Status</th><th>WhatsApp</th><th></th></tr></thead>
           <tbody id="pesertaBody"></tbody>
         </table>
       </div>
@@ -166,6 +166,15 @@
         </div>
         <div class="row"><button class="btn" type="submit">Simpan pengaturan</button><span class="msg" id="sMsg"></span></div>
       </form>
+    </section>
+
+    <section class="panel zona" id="zona">
+      <div class="board-head">
+        <div><h2>Reset &amp; hapus data</h2><p class="muted" style="margin:4px 0 0;font-size:13px">Penghapusan tidak bisa dibatalkan. Unduh cadangan dulu. Pengaturan acara (nama, logo, warna) tidak ikut terhapus.</p></div>
+        <button class="btn-ghost btn-sm" id="zBackup" type="button">Unduh cadangan (JSON)</button>
+      </div>
+      <div class="zona-list" id="zList"></div>
+      <div class="msg" id="zMsg" role="status" style="margin-top:10px"></div>
     </section>
   </div>
 
