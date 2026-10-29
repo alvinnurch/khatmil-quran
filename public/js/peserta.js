@@ -1,5 +1,5 @@
 import { onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, deleteUser } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
-import { doc, getDoc, setDoc, updateDoc, writeBatch, collection, query, where, onSnapshot, runTransaction } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+import { doc, getDoc, getDocs, setDoc, updateDoc, writeBatch, collection, query, where, onSnapshot, runTransaction } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import { bukaKartu } from "./kartu.js";
 import { halamanJuz, siapkanHalaman, gambarHalaman, paskanUkuran, prefetch } from "./mushaf.js";
 import { terapkanTema, ikon, inisial, alokasiJuz, idDariWa, KATEGORI, kelompok, tampilId, PRODI, bersihkanKode, idHadir, kodeDariTeks, muatSkrip, kodeAcak, isiTiket, gambarQR, mulaiPindai, paletTema, hexValid, unduhBerkas, namaPanggil } from "./common.js";
@@ -12,6 +12,7 @@ let papan = [];           // bacaan pada putaran yang sedang berjalan
 let putaranAktif = 1;
 let unsub = [];
 let unsubPapan = null;
+let terambilPj = [], statusDimuat = 0, papanDimuat = 0, papanPutaran = 0;
 let membaca = null, konfirmasi = false;
 let acara = {};
 let hadirSaya = [];
@@ -61,15 +62,10 @@ onAuthStateChanged(auth, async user => {
   }));
   unsub.push(onSnapshot(query(collection(db, "hadir"), where("uid", "==", user.uid)), s => { hadirSaya = s.docs.map(d => d.data()); renderHadir(); }, () => {}));
   unsub.push(onSnapshot(query(collection(db, "bacaan"), where("uid", "==", user.uid)), s => { mine = s.docs.map(d => ({ ...d.data(), _id: d.id })); render(); }));
-  unsub.push(onSnapshot(doc(db, "state", "alokasi"), s => {
-    const p = s.exists() ? (s.data().putaran || 1) : 1;
-    if (p !== putaranAktif || !unsubPapan) {
-      putaranAktif = p;
-      if (unsubPapan) unsubPapan();
-      unsubPapan = onSnapshot(query(collection(db, "bacaan"), where("putaran", "==", p)), q => { papan = q.docs.map(d => d.data()); render(); });
-    }
-    render();
-  }));
+  // Hemat kuota: HP peserta tidak memantau papan secara langsung. Status putaran dibaca sekali (1 dokumen)
+  // saat masuk dan setelah peserta bertindak; detail papan dimuat hanya bila diminta.
+  terambilPj = []; papanDimuat = 0; statusDimuat = 0;
+  muatStatus(true);
 });
 
 /* ---------- tampilan ---------- */
@@ -92,21 +88,27 @@ function render() {
     ? `${KATEGORI[me.kategori]}${me.instansi ? " · " + me.instansi : ""}`
     : `NIM ${me.nim}${me.prodi ? " · " + me.prodi : ""}`;
 
-  // papan putaran
-  const per = {}; papan.forEach(r => per[r.juz] = r);
+  // papan putaran: ringkas (dari dokumen status) atau detail (dimuat atas permintaan)
+  const detail = papanDimuat > 0 && papanPutaran === putaranAktif;
+  const per = {}; if (detail) papan.forEach(r => per[r.juz] = r);
+  const milikSaya = new Set(mine.filter(r => r.putaran === putaranAktif).map(r => r.juz));
   let selesai = 0, dibaca = 0, html = "";
   for (let j = 1; j <= 30; j++) {
-    const r = per[j];
-    const cls = r ? (r.status === "selesai" ? "done" : "busy") : "";
-    if (r?.status === "selesai") selesai++; else if (r) dibaca++;
-    const milik = r && r.nim === me.nim ? " mine" : "";
-    const tip = `Juz ${j} · ${rentangJuz(j)} · ${r ? (r.status === "selesai" ? "selesai" : "sedang dibaca") : "belum diambil"}`;
-    html += `<div class="cell ${cls}${milik}" title="${esc(tip)}" aria-label="${esc(tip)}">${j}</div>`;
+    const r = per[j], diambil = detail ? !!r : terambilPj.includes(j);
+    const cls = detail ? (r ? (r.status === "selesai" ? "done" : "busy") : "") : (diambil ? "busy" : "");
+    if (r?.status === "selesai") selesai++; else if (diambil) dibaca++;
+    const status = detail ? (r ? (r.status === "selesai" ? "selesai" : "sedang dibaca") : "belum diambil") : (diambil ? "sudah dibagikan" : "belum diambil");
+    const tip = `Juz ${j} · ${rentangJuz(j)} · ${status}`;
+    html += `<div class="cell ${cls}${milikSaya.has(j) ? " mine" : ""}" title="${esc(tip)}" aria-label="${esc(tip)}">${j}</div>`;
   }
   $("grid").innerHTML = html;
   $("pNo").textContent = putaranAktif;
-  $("pBar").style.width = (selesai / 30 * 100) + "%";
-  $("pText").textContent = `${selesai} dari 30 juz selesai · ${dibaca} sedang dibaca · ${30 - selesai - dibaca} belum diambil`;
+  $("pLegend").innerHTML = detail ? `<span><i></i>Kosong</span><span><i class="busy"></i>Dibaca</span><span><i class="done"></i>Selesai</span>` : `<span><i></i>Belum diambil</span><span><i class="busy"></i>Sudah dibagikan</span>`;
+  const dibagikan = detail ? selesai + dibaca : terambilPj.length;
+  $("pBar").style.width = ((detail ? selesai : dibagikan) / 30 * 100) + "%";
+  $("pText").textContent = detail
+    ? `${selesai} dari 30 juz selesai · ${dibaca} sedang dibaca · ${30 - selesai - dibaca} belum diambil · diperbarui ${new Date(papanDimuat).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}`
+    : `${dibagikan} dari 30 juz putaran ini sudah dibagikan. Tekan "Lihat yang selesai" untuk detail.`;
 
   // kartu juz
   const aktif = mine.find(r => r.status === "membaca");
@@ -132,9 +134,10 @@ function render() {
   const baris = (warna, nilai, label) => `<div class="statrow"><span class="val ${warna}">${nilai}</span><span class="lbl">${label}</span></div>`;
   $("stats").innerHTML =
     baris("t-mint", `${ikon("cek", 16)} ${tuntas.length} juz`, "Sudah kamu tuntaskan") +
-    baris("t-sky", `${ikon("bintang", 16)} ${selesai}/30`, `Juz selesai di putaran ${putaranAktif}`) +
-    baris("t-butter", `${ikon("jam", 16)} ${dibaca} juz`, "Sedang dibaca peserta") +
-    baris("t-peach", `${ikon("buku", 16)} ${30 - selesai - dibaca} juz`, "Belum diambil");
+    (detail
+      ? baris("t-sky", `${ikon("bintang", 16)} ${selesai}/30`, `Juz selesai di putaran ${putaranAktif}`) + baris("t-butter", `${ikon("jam", 16)} ${dibaca} juz`, "Sedang dibaca peserta")
+      : baris("t-sky", `${ikon("bintang", 16)} ${dibagikan}/30`, `Juz dibagikan di putaran ${putaranAktif}`)) +
+    baris("t-peach", `${ikon("buku", 16)} ${30 - dibagikan} juz`, "Belum diambil");
   const items = [...mine].sort((a, b) => (b.ambil || 0) - (a.ambil || 0)).map(r =>
     `<li><span><b>Juz ${r.juz}</b> <span class="muted">· putaran ${r.putaran}</span></span><span class="row" style="gap:6px;flex-wrap:nowrap"><span class="pill ${r.status === "selesai" ? "done" : "busy"}">${r.status === "selesai" ? "Selesai " + lalu(r.selesai) : "Sedang dibaca"}</span>${r.status === "selesai" ? `<button class="btn-link btn-sm" data-kartu="${esc(r._id)}" type="button">Kartu</button>` : ""}</span></li>`);
   $("myList").innerHTML = (items.length ? items.join("") : `<li class="empty">Belum ada juz yang dibaca.</li>`);
@@ -207,17 +210,26 @@ $("regForm").addEventListener("submit", async e => {
 $("logout").addEventListener("click", () => signOut(auth));
 
 /* ---------- ambil, selesai, kembalikan ---------- */
+// Saat ratusan orang menekan "Ambil juz" bersamaan, transaksi pada dokumen pembagi bisa bertabrakan.
+// Coba ulang otomatis dengan jeda acak supaya peserta cukup menunggu, tidak perlu menekan berulang.
+const KODE_ULANG = new Set(["bentrok", "aborted", "failed-precondition", "unavailable", "resource-exhausted", "deadline-exceeded", "cancelled"]);
 async function ambilJuz() {
   const btn = $("takeBtn"); if (btn) btn.disabled = true;
   setMsg("aMsg", "Mencarikan juz…");
-  try {
-    // Utamakan juz yang belum pernah dibaca peserta ini, tanpa melanggar urutan putaran.
-    const sudah = new Set(mine.map(r => r.juz));
-    await alokasiJuz({ nim: me.nim, nama: me.nama, prodi: kelompok(me), uid: auth.currentUser.uid }, sudah);
-    setMsg("aMsg", "");
-  } catch (err) {
-    setMsg("aMsg", err?.code === "bentrok" ? "Juz itu baru saja diambil orang lain. Coba lagi." : pesanError(err), "err");
-    const b = $("takeBtn"); if (b) b.disabled = false;
+  const sudah = new Set(mine.map(r => r.juz));      // utamakan juz yang belum pernah dibaca peserta ini
+  for (let coba = 1; coba <= 10; coba++) {
+    try {
+      await alokasiJuz({ nim: me.nim, nama: me.nama, prodi: kelompok(me), uid: auth.currentUser.uid }, sudah);
+      setMsg("aMsg", ""); muatStatus(true); return;
+    } catch (err) {
+      if (!KODE_ULANG.has(err?.code) || coba === 10) {
+        setMsg("aMsg", KODE_ULANG.has(err?.code) ? "Antrean sedang sangat ramai. Tunggu sebentar lalu tekan Ambil juz lagi." : pesanError(err), "err");
+        const b = $("takeBtn"); if (b) b.disabled = false;
+        return;
+      }
+      setMsg("aMsg", `Antrean ramai, mencoba lagi… (${coba})`);
+      await new Promise(r => setTimeout(r, 300 + Math.random() * 700 * Math.min(coba, 5)));
+    }
   }
 }
 
@@ -225,7 +237,7 @@ async function tandaiSelesai(r) {
   const batch = writeBatch(db);
   batch.update(doc(db, "bacaan", r._id), { status: "selesai", selesai: Date.now() });
   batch.update(doc(db, "peserta", me.nim), { aktif: null });
-  try { await batch.commit(); return true; }
+  try { await batch.commit(); if (papanDimuat) muatPapan(true); return true; }
   catch (err) { setMsg("aMsg", pesanError(err), "err"); return false; }
 }
 
@@ -242,7 +254,7 @@ $("assign").addEventListener("click", async ev => {
     e.target.dataset.armed = "1"; e.target.textContent = "Yakin selesai?"; e.target.className = "btn btn-sm";
   }
   if (id === "returnBtn") {
-    if (e.target.dataset.armed) { try { await kosongkanJuz(aktif._id); } catch (err) { setMsg("aMsg", pesanError(err), "err"); } return; }
+    if (e.target.dataset.armed) { try { await kosongkanJuz(aktif._id); muatStatus(true); } catch (err) { setMsg("aMsg", pesanError(err), "err"); } return; }
     e.target.dataset.armed = "1"; e.target.textContent = "Ketuk lagi untuk mengembalikan";
   }
 });
@@ -711,3 +723,28 @@ async function aktivasi() {
   if (!hasil.ok) return setMsg("lMsg", hasil.pesan, "err");
   $("loginForm").reset(); aturModePertama(false);
 }
+
+/* ---------- status putaran & papan (dimuat seperlunya, hemat kuota) ---------- */
+async function muatStatus(paksa = false) {
+  if (!auth.currentUser || (!paksa && Date.now() - statusDimuat < 30000)) return;
+  statusDimuat = Date.now();
+  try {
+    const st = await getDoc(doc(db, "state", "alokasi"));
+    const d = st.exists() ? st.data() : {};
+    putaranAktif = d.putaran || 1; terambilPj = d.terambil || [];
+    render();
+  } catch {}
+}
+async function muatPapan(paksa = false) {
+  if (!auth.currentUser || (!paksa && Date.now() - papanDimuat < 30000)) return;
+  const btn = $("pMuat"); if (btn) { btn.disabled = true; btn.textContent = "Memuat…"; }
+  try {
+    await muatStatus(true);
+    const q = await getDocs(query(collection(db, "bacaan"), where("putaran", "==", putaranAktif)));
+    papan = q.docs.map(d => d.data()); papanPutaran = putaranAktif; papanDimuat = Date.now();
+    render();
+  } catch {}
+  if (btn) { btn.disabled = false; btn.textContent = "Perbarui"; }
+}
+$("pMuat").addEventListener("click", () => muatPapan(true));
+document.addEventListener("visibilitychange", () => { if (!document.hidden && me) muatStatus(); });
