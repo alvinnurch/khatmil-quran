@@ -35,14 +35,47 @@ service cloud.firestore {
 
     match /peserta/{nim} {
       allow read: if (peserta() && nimSaya() == nim) || panitia();
-      allow create: if peserta() && nimSaya() == nim
+      // Peserta mendaftar sendiri, atau panitia mengimpor daftar peserta (uid kosong sampai peserta pertama kali masuk).
+      allow create: if (peserta() && nimSaya() == nim
         && request.resource.data.nim == nim
         && request.resource.data.uid == request.auth.uid
-        && request.resource.data.aktif == null;
+        && request.resource.data.aktif == null) || panitia();
+      // Peserta hanya boleh mengubah juz aktifnya, atau membuat token tiket sekali (untuk akun lama yang belum punya).
       allow update: if (peserta() && resource.data.uid == request.auth.uid
-                        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['aktif']))
+                        && (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['aktif'])
+                            || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['tiket'])
+                                && resource.data.get('tiket', null) == null)))
+                    // Pertama kali masuk: peserta hasil impor mengklaim datanya. Bila panitia mengisi nomor WA,
+                    // peserta harus menyebutkan nomor yang sama (field klaim) sebagai verifikasi.
+                    || (peserta() && nimSaya() == nim && resource.data.get('uid', null) == null
+                        && request.resource.data.uid == request.auth.uid
+                        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['uid', 'klaim', 'hp', 'tiket'])
+                        && (resource.data.get('hp', '') == ''
+                            || (request.resource.data.get('klaim', '') == resource.data.hp && request.resource.data.hp == resource.data.hp)))
                     || panitia();
       allow delete: if panitia();
+    }
+
+    // Sesi kehadiran. ID dokumen = kode 6 karakter yang ditampilkan sebagai QR oleh panitia.
+    // Peserta yang tahu kodenya boleh membaca satu dokumen itu (untuk nama sesi), tapi tidak bisa melihat daftar sesi.
+    match /sesi/{kode} {
+      allow get: if masuk();
+      allow list, write: if panitia();
+    }
+
+    // Catatan kehadiran: ID = <KODE>__<nim atau wa62…>.
+    match /hadir/{id} {
+      allow get: if panitia() || (peserta() && id.matches('^[A-Z0-9]{6}__' + nimSaya() + '$'));
+      allow list: if panitia() || (peserta() && resource.data.uid == request.auth.uid);
+      // Peserta mencatat kehadirannya sendiri, hanya untuk sesi yang masih dibuka.
+      allow create: if panitia() || (peserta()
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.nim == nimSaya()
+        && request.resource.data.sumber == 'scan'
+        && id == request.resource.data.sesi + '__' + nimSaya()
+        && exists(/databases/$(database)/documents/sesi/$(request.resource.data.sesi))
+        && get(/databases/$(database)/documents/sesi/$(request.resource.data.sesi)).data.aktif == true);
+      allow update, delete: if panitia();
     }
 
     match /bacaan/{id} {

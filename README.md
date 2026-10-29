@@ -20,6 +20,26 @@ Dibangun dengan HTML, CSS, dan JavaScript biasa (tanpa proses build) di atas Fir
 - Juz yang dikembalikan peserta atau dilepas panitia dari putaran lama dibagikan lebih dulu, supaya putaran lama cepat lengkap.
 - Bila memungkinkan, peserta diberi juz yang belum pernah ia baca.
 
+**Impor peserta (tanpa pendaftaran)**
+- Di dasbor, bagian Peserta: **Unduh template peserta** → isi (kolom: nama, kategori, nim, prodi, no_wa, instansi) → **Impor peserta (CSV)**. NIM yang sudah terdaftar dilewati.
+- Peserta hasil impor tidak perlu mendaftar. Di halaman masuk mereka memilih **Pertama kali masuk**, mengisi NIM (dosen/peserta luar: nomor WA), nomor WhatsApp sebagai verifikasi, lalu membuat PIN. Bila panitia mengisi nomor WA di data impor, nomornya harus sama.
+- Tombol **Kirim tiket** di tabel mengirim petunjuk "Pertama kali masuk" lewat WhatsApp. Status "Belum masuk" menandai peserta yang belum pernah masuk.
+- Pendaftaran mandiri tetap tersedia. Bila seseorang mendaftar dengan NIM yang sudah diimpor, datanya otomatis memakai data impor.
+
+**Tiket peserta**
+- Saat mendaftar, setiap peserta otomatis mendapat **tiket ber-QR** (nomor WhatsApp kini wajib diisi). Tiket langsung tampil setelah daftar dan bisa dibuka lagi lewat tombol **Tiket saya**.
+- Tombol **Kirim ke WhatsApp**: di HP membuka menu berbagi (pilih WhatsApp → chat ke nomor sendiri) beserta gambar tiket; di laptop membuka WhatsApp ke nomor peserta dengan kode dan tautan tiket.
+- Di tabel peserta, panitia bisa menekan **Kirim tiket** untuk mengirim tautan tiket ke WhatsApp peserta dari nomor panitia.
+- Pengiriman **otomatis** tanpa klik membutuhkan layanan WhatsApp gateway berbayar dan Cloud Function (paket Blaze). Belum termasuk di versi ini.
+
+**Kehadiran (check-in)**
+- Panitia membuat **sesi** di dasbor (mis. "Ushuluddin Mengaji", "Puncak Milad"). Setiap sesi mendapat kode 6 karakter dan QR.
+- Tekan **Tampilkan QR** lalu tayangkan di proyektor/layar. Peserta scan dengan kamera HP (membuka aplikasi dan langsung mencatat kehadiran setelah masuk), memakai tombol **Scan QR** di aplikasi, atau mengetik kodenya.
+- Satu orang tercatat sekali per sesi. Tekan **Tutup check-in** setelah acara agar QR yang tersebar tidak bisa dipakai lagi.
+- **Unduh template** → isi daftar hadir manual (kolom: nama, nim_atau_wa, kategori, prodi, instansi, waktu, kode_sesi) → **Impor CSV**. Berkas dari Excel dengan pemisah titik koma juga diterima. Baris yang sudah tercatat dilewati.
+- **Scan tiket peserta**: panitia memindai QR tiket peserta dengan kamera HP/laptop untuk sesi yang sedang dibuka. Hasilnya langsung tampil (hijau = tercatat, kuning = sudah hadir, merah = tiket tidak sah/belum terdaftar). Peserta tanpa HP bisa dicatat dengan mengetik NIM atau nomor WA.
+- **Unduh CSV** mengunduh daftar hadir sesi yang dipilih (atau semua sesi).
+
 **Dasbor panitia** (`/panitia`)
 - Jumlah khataman terkumpul (satu khatam = satu putaran yang 30 juznya selesai), juz selesai, juz sedang dibaca, peserta terdaftar, dan peserta yang sudah membaca.
 - Progres setiap putaran dalam satu pandangan.
@@ -29,6 +49,7 @@ Dibangun dengan HTML, CSS, dan JavaScript biasa (tanpa proses build) di atas Fir
 - **Mode layar**: angka khataman besar untuk ditayangkan di proyektor, diperbarui langsung.
 - **Unduh CSV**: rekap seluruh bacaan untuk laporan.
 - **Pengaturan acara**: nama acara, keterangan, tagar media sosial, **logo acara**, dan **warna tema** (8 pilihan siap pakai atau warna bebas). Semuanya tampil di halaman peserta, dasbor, mode layar, dan kartu selfie.
+- **Reset & hapus data**: reset bacaan & khataman, hapus kehadiran, hapus sesi, hapus semua peserta, atau reset seluruh acara. Setiap tindakan meminta konfirmasi dengan mengetik HAPUS. Tombol **Unduh cadangan (JSON)** menyimpan seluruh data sebelum dihapus. Peserta juga bisa dihapus satu per satu dari tabel peserta. Akun login peserta (di Authentication) tidak ikut terhapus, sehingga peserta yang datanya dihapus cukup masuk lagi dan mengisi ulang formulir.
 
 ## Struktur berkas
 
