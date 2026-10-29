@@ -1,9 +1,10 @@
 import { onAuthStateChanged, signInWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
-import { doc, getDoc, setDoc, collection, onSnapshot } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
-import { terapkanTema, WARNA_PRESET, hexValid, kelompok, tampilId } from "./common.js";
+import { doc, getDoc, setDoc, updateDoc, deleteDoc, writeBatch, collection, onSnapshot } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+import { terapkanTema, WARNA_PRESET, hexValid, kelompok, tampilId, kodeAcak, idHadir, keCSV, bacaCSV, unduhBerkas, muatSkrip, KATEGORI, idDariWa, bersihkanNim, bersihkanKode, bacaTiket, mulaiPindai, URL_QR_LIB } from "./common.js";
 import { auth, db, configBelumDiisi, isAkunPeserta, rentangJuz, $, esc, lalu, setMsg, pesanError, kosongkanJuz, ringkas } from "./common.js";
 
 let bacaan = [], peserta = [], acara = {}, unsub = [];
+let sesiList = [], hadirList = [], qrKode = null;
 let logoDraf;
 let warnaDraf;  // undefined = tidak diubah, null = kembali ke bawaan, string = warna baru   // undefined = tidak diubah, null = dihapus, string = logo baru (data URL)
 
@@ -19,13 +20,23 @@ onAuthStateChanged(auth, async user => {
   unsub.forEach(f => f()); unsub = [];
   if (!user) return tampil("login");
   if (isAkunPeserta(user)) { tampil("login"); return setMsg("lMsg", "Akun peserta tidak bisa membuka dasbor panitia.", "err"); }
-  let admin = false;
-  try { admin = (await getDoc(doc(db, "admins", user.email.toLowerCase()))).exists(); } catch { admin = false; }
-  if (!admin) { await signOut(auth); tampil("login"); return setMsg("lMsg", `${user.email} belum terdaftar sebagai panitia. Tambahkan di koleksi "admins" (lihat README).`, "err"); }
+  let admin = false, galat = null;
+  const emailKecil = user.email.toLowerCase();
+  try { admin = (await getDoc(doc(db, "admins", emailKecil))).exists(); } catch (e) { galat = e; }
+  if (!admin) {
+    await signOut(auth); tampil("login");
+    if (galat?.code === "permission-denied")
+      return setMsg("lMsg", `Database menolak pengecekan panitia. Pasang aturan Firestore dulu: Firebase Console → Firestore Database → Rules → tempel isi firestore.rules → Publish.`, "err");
+    if (galat)
+      return setMsg("lMsg", `Gagal memeriksa status panitia (${galat.code || "koneksi"}). Coba lagi sebentar.`, "err");
+    return setMsg("lMsg", `${emailKecil} belum ada di koleksi "admins". Di Firestore, buat dokumen dengan Document ID persis "${emailKecil}" di dalam koleksi "admins".`, "err");
+  }
   $("whoEmail").textContent = user.email;
   tampil("dash");
   unsub.push(onSnapshot(collection(db, "bacaan"), s => { bacaan = s.docs.map(d => ({ ...d.data(), _id: d.id })); render(); }));
   unsub.push(onSnapshot(collection(db, "peserta"), s => { peserta = s.docs.map(d => d.data()); render(); }));
+  unsub.push(onSnapshot(collection(db, "sesi"), s => { sesiList = s.docs.map(d => ({ ...d.data(), kode: d.id })).sort((a, b) => (b.dibuat || 0) - (a.dibuat || 0)); renderHadir(); }));
+  unsub.push(onSnapshot(collection(db, "hadir"), s => { hadirList = s.docs.map(d => ({ ...d.data(), _id: d.id })); renderHadir(); }));
   unsub.push(onSnapshot(doc(db, "pengaturan", "acara"), s => {
     acara = s.exists() ? s.data() : {};
     $("evName").textContent = acara.nama || "Khatmil Qur'an";
@@ -107,7 +118,7 @@ function renderPeserta() {
   $("pesertaBody").innerHTML = rows.length ? rows.map(p => {
     const aktif = p.aktif ? bacaan.find(r => r._id === p.aktif) : null;
     return `<tr><td class="wrap">${esc(p.nama)}</td><td class="num">${esc(tampilId(p))}</td><td>${esc(kelompok(p))}${p.instansi ? `<span class="muted"> · ${esc(p.instansi)}</span>` : ""}</td><td class="num">${hitung[p.nim] || 0}</td>
-      <td>${aktif ? `<span class="pill busy">Membaca juz ${aktif.juz}</span>` : `<span class="muted">—</span>`}</td><td>${esc(p.hp || "")}</td></tr>`;
+      <td>${aktif ? `<span class="pill busy">Membaca juz ${aktif.juz}</span>` : `<span class="muted">—</span>`}</td><td>${p.hp ? `${esc(p.hp)} <a class="btn-link" href="${tautanWaTiket(p)}" target="_blank" rel="noopener">Kirim tiket</a>` : `<span class="muted">—</span>`}</td></tr>`;
   }).join("") : `<tr><td colspan="6" class="empty">${peserta.length ? "Tidak ada yang cocok." : "Belum ada peserta terdaftar."}</td></tr>`;
 }
 
@@ -202,3 +213,224 @@ function pilihWarna(hex) { warnaDraf = hex; tampilWarna(hex); setMsg("sMsg", "Wa
 $("sWarnaPreset").addEventListener("click", e => { const b = e.target.closest("[data-warna]"); if (b) pilihWarna(b.dataset.warna); });
 $("sWarna").addEventListener("input", e => pilihWarna(e.target.value.toLowerCase()));
 $("sWarnaReset").addEventListener("click", () => pilihWarna(null));
+
+/* ---------- kehadiran ---------- */
+const CARA = { scan: "Scan QR", tiket: "Tiket", manual: "Manual", impor: "Impor" };
+const CARA_PANJANG = { scan: "Peserta scan QR sesi", tiket: "Panitia scan tiket", manual: "Dicatat manual panitia", impor: "Impor CSV" };
+const fmtWaktu = t => t ? new Date(t).toLocaleString("id-ID", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "";
+const tautanHadir = kode => new URL("./", location.href).href + "?hadir=" + kode;
+
+function renderHadir() {
+  const jumlah = {}; hadirList.forEach(h => { jumlah[h.sesi] = (jumlah[h.sesi] || 0) + 1; });
+  $("sesiList").innerHTML = sesiList.length ? sesiList.map(x => `
+    <div class="sesi ${x.aktif ? "buka" : ""}">
+      <div class="atas"><b>${esc(x.nama)}</b><span class="pill ${x.aktif ? "done" : ""}" style="${x.aktif ? "" : "background:var(--surface)"}">${x.aktif ? "Dibuka" : "Ditutup"}</span></div>
+      <div class="row" style="justify-content:space-between"><span class="kode num">${x.kode}</span><span class="num" style="font-weight:600">${jumlah[x.kode] || 0} hadir</span></div>
+      <div class="row" style="gap:6px">
+        <button class="btn btn-sm" data-qr="${x.kode}" type="button">Tampilkan QR</button>
+        <button class="btn-ghost btn-sm" data-toggle="${x.kode}" type="button">${x.aktif ? "Tutup check-in" : "Buka lagi"}</button>
+      </div>
+    </div>`).join("") : `<p class="empty">Belum ada sesi. Buat sesi pertama di atas, misalnya "Ushuluddin Mengaji" dan "Puncak Milad".</p>`;
+
+  const pilih = $("hFilter").value;
+  $("hFilter").innerHTML = `<option value="">Semua sesi</option>` + sesiList.map(x => `<option value="${x.kode}">${esc(x.nama)} (${x.kode})</option>`).join("");
+  $("hFilter").value = sesiList.some(x => x.kode === pilih) ? pilih : "";
+
+  const q = $("hCari").value.trim().toLowerCase(), f = $("hFilter").value;
+  const baris = barisHadir(f).filter(h => !q || `${h.nama} ${h.nim} ${tampilId(h)} ${h.prodi} ${h.instansi || ""}`.toLowerCase().includes(q));
+  const namaSesi = Object.fromEntries(sesiList.map(x => [x.kode, x.nama]));
+  $("hJumlah").textContent = `· ${baris.length} orang`;
+  $("hBody").innerHTML = baris.length ? baris.map(h => `<tr>
+      <td class="num">${fmtWaktu(h.waktu)}</td><td class="wrap">${esc(h.nama)}</td><td class="num">${esc(tampilId(h))}</td>
+      <td>${esc(h.prodi || "")}${h.instansi ? `<span class="muted"> · ${esc(h.instansi)}</span>` : ""}</td>
+      <td>${esc(namaSesi[h.sesi] || h.namaSesi || h.sesi)}</td><td><span class="pill ${h.sumber === "impor" ? "busy" : "done"}">${CARA[h.sumber] || h.sumber}</span></td>
+      <td><button class="btn-link" data-hapus="${esc(h._id)}" type="button">Hapus</button></td></tr>`).join("")
+    : `<tr><td colspan="7" class="empty">${hadirList.length ? "Tidak ada yang cocok." : "Belum ada yang check-in."}</td></tr>`;
+  if (qrKode) $("qrJumlah").textContent = jumlah[qrKode] || 0;
+}
+const barisHadir = f => hadirList.filter(h => !f || h.sesi === f).sort((a, b) => (b.waktu || 0) - (a.waktu || 0));
+$("hFilter").addEventListener("change", renderHadir);
+$("hCari").addEventListener("input", renderHadir);
+
+$("sesiForm").addEventListener("submit", async e => {
+  e.preventDefault();
+  const nama = $("sesiNama").value.trim();
+  if (!nama) return setMsg("hAdmMsg", "Isi nama sesi dulu.", "err");
+  let kode = kodeAcak();
+  while (sesiList.some(x => x.kode === kode)) kode = kodeAcak();
+  try { await setDoc(doc(db, "sesi", kode), { nama, aktif: true, dibuat: Date.now() }); $("sesiNama").value = ""; setMsg("hAdmMsg", `Sesi "${nama}" dibuat dengan kode ${kode}.`, "ok"); }
+  catch (err) { setMsg("hAdmMsg", pesanError(err), "err"); }
+});
+
+$("sesiList").addEventListener("click", async e => {
+  const b = e.target.closest("button"); if (!b) return;
+  if (b.dataset.qr) return tampilQR(b.dataset.qr);
+  if (b.dataset.toggle) {
+    const x = sesiList.find(y => y.kode === b.dataset.toggle); if (!x) return;
+    try { await updateDoc(doc(db, "sesi", x.kode), { aktif: !x.aktif }); } catch (err) { setMsg("hAdmMsg", pesanError(err), "err"); }
+  }
+});
+
+$("hBody").addEventListener("click", async e => {
+  const id = e.target.dataset.hapus; if (!id) return;
+  if (!e.target.dataset.armed) { e.target.dataset.armed = "1"; e.target.textContent = "Yakin hapus?"; return; }
+  try { await deleteDoc(doc(db, "hadir", id)); } catch (err) { setMsg("hAdmMsg", pesanError(err), "err"); }
+});
+
+async function tampilQR(kode) {
+  const x = sesiList.find(y => y.kode === kode); if (!x) return;
+  qrKode = kode;
+  $("qrAcara").textContent = acara.nama || "Khatmil Qur'an";
+  $("qrSesi").textContent = x.nama;
+  $("qrKode").textContent = kode;
+  $("qrGambar").innerHTML = `<span class="muted">Membuat QR…</span>`;
+  $("qrLayar").hidden = false;
+  document.documentElement.requestFullscreen?.().catch(() => {});
+  renderHadir();
+  try {
+    await muatSkrip(URL_QR_LIB);
+    const qr = window.qrcode(0, "M"); qr.addData(tautanHadir(kode)); qr.make();
+    $("qrGambar").innerHTML = qr.createSvgTag({ cellSize: 8, margin: 1, scalable: true });
+  } catch { $("qrGambar").innerHTML = `<span class="muted" style="padding:20px;text-align:center">QR tidak bisa dibuat (cek koneksi). Peserta tetap bisa check-in dengan mengetik kode di bawah.</span>`; }
+}
+function tutupQR() { $("qrLayar").hidden = true; qrKode = null; if (document.fullscreenElement) document.exitFullscreen().catch(() => {}); }
+$("qrTutup").addEventListener("click", tutupQR);
+document.addEventListener("keydown", e => { if (e.key === "Escape" && !$("qrLayar").hidden) tutupQR(); });
+
+/* unduh daftar hadir */
+$("hCsv").addEventListener("click", async () => {
+  const f = $("hFilter").value, namaSesi = Object.fromEntries(sesiList.map(x => [x.kode, x.nama]));
+  const baris = [["Sesi", "Kode sesi", "Waktu", "Nama", "NIM / WhatsApp", "Kategori", "Prodi / kelompok", "Instansi", "WhatsApp", "Cara"]]
+    .concat(barisHadir(f).reverse().map(h => [namaSesi[h.sesi] || h.namaSesi || h.sesi, h.sesi, fmtWaktu(h.waktu), h.nama, tampilId(h), KATEGORI[h.kategori] || h.kategori || "", h.prodi || "", h.instansi || "", h.hp || "", CARA_PANJANG[h.sumber] || h.sumber]));
+  const sesiNama = f ? (namaSesi[f] || f).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") : "semua-sesi";
+  try { await unduhBerkas(new Blob([keCSV(baris)], { type: "text/csv;charset=utf-8" }), `kehadiran-${sesiNama}-${new Date().toISOString().slice(0, 10)}.csv`); }
+  catch { setMsg("hAdmMsg", "Unduhan dibatalkan.", "err"); }
+});
+
+/* template & impor */
+const KOLOM = ["nama", "nim_atau_wa", "kategori", "prodi", "instansi", "waktu", "kode_sesi"];
+$("hTemplate").addEventListener("click", async () => {
+  const kode = $("hFilter").value || sesiList[0]?.kode || "";
+  const baris = [KOLOM,
+    ["Contoh Mahasiswa", "11210340000123", "mahasiswa", "Ilmu Hadis", "", "2026-11-02 08:15", kode],
+    ["Contoh Dosen", "081234567890", "dosen", "", "", "2026-11-02 08:20", kode],
+    ["Contoh Peserta Luar", "081298765432", "umum", "", "Alumni 2015", "", kode]];
+  try { await unduhBerkas(new Blob([keCSV(baris)], { type: "text/csv;charset=utf-8" }), "template-kehadiran.csv"); }
+  catch { setMsg("hAdmMsg", "Unduhan dibatalkan.", "err"); }
+});
+
+$("hImpor").addEventListener("change", async e => {
+  const file = e.target.files[0]; e.target.value = "";
+  if (!file) return;
+  setMsg("hAdmMsg", "Membaca berkas…");
+  let rows;
+  try { rows = bacaCSV(await file.text()); } catch { return setMsg("hAdmMsg", "Berkas tidak bisa dibaca. Simpan sebagai CSV lalu coba lagi.", "err"); }
+  if (rows.length < 2) return setMsg("hAdmMsg", "Berkas kosong. Isi data di bawah baris judul kolom.", "err");
+  const kepala = rows[0].map(k => k.trim().toLowerCase().replace(/\s+/g, "_"));
+  const ix = n => kepala.indexOf(n);
+  if (ix("nama") < 0) return setMsg("hAdmMsg", 'Kolom "nama" tidak ditemukan. Pakai template dari tombol "Unduh template".', "err");
+  const bawaan = $("hFilter").value;
+  const ada = new Set(hadirList.map(h => h._id)), kodeAda = new Set(sesiList.map(x => x.kode));
+  const tulis = [], lewat = [];
+  let sudah = 0;
+  rows.slice(1).forEach((r, i) => {
+    const ambil = n => (ix(n) >= 0 ? String(r[ix(n)] ?? "") : "").trim();
+    const noBaris = i + 2, nama = ambil("nama");
+    if (!nama || /^contoh\b/i.test(nama)) { if (!nama) lewat.push(`baris ${noBaris}: nama kosong`); return; }
+    const kode = bersihkanKode(ambil("kode_sesi")) || bawaan;
+    if (!kode) return lewat.push(`baris ${noBaris}: kode_sesi kosong (atau pilih sesi di daftar hadir)`);
+    if (!kodeAda.has(kode)) return lewat.push(`baris ${noBaris}: sesi ${kode} tidak ada`);
+    let kat = ambil("kategori").toLowerCase();
+    kat = kat.startsWith("dos") ? "dosen" : (kat.startsWith("umum") || kat.startsWith("luar") || kat.startsWith("peserta")) ? "umum" : "mahasiswa";
+    const idMentah = ambil("nim_atau_wa");
+    let id = kat === "mahasiswa" ? bersihkanNim(idMentah).toLowerCase() : idDariWa(idMentah);
+    if (!id) id = "manual-" + nama.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40);
+    const docId = idHadir(kode, id);
+    if (ada.has(docId)) { sudah++; return; }
+    ada.add(docId);
+    const t = Date.parse(ambil("waktu").replace(" ", "T"));
+    const sesi = sesiList.find(x => x.kode === kode);
+    tulis.push([docId, { sesi: kode, namaSesi: sesi.nama, nim: id, nama, kategori: kat,
+      prodi: kat === "mahasiswa" ? (ambil("prodi") || "Mahasiswa") : KATEGORI[kat], instansi: ambil("instansi"),
+      hp: kat === "mahasiswa" ? "" : idMentah, uid: null, waktu: isNaN(t) ? Date.now() : t, sumber: "impor" }]);
+  });
+  try {
+    for (let i = 0; i < tulis.length; i += 400) {
+      const b = writeBatch(db);
+      tulis.slice(i, i + 400).forEach(([id, d]) => b.set(doc(db, "hadir", id), d));
+      await b.commit();
+    }
+    const info = [`${tulis.length} kehadiran diimpor`];
+    if (sudah) info.push(`${sudah} sudah tercatat sebelumnya`);
+    if (lewat.length) info.push(`${lewat.length} dilewati (${lewat.slice(0, 3).join("; ")}${lewat.length > 3 ? "; …" : ""})`);
+    setMsg("hAdmMsg", info.join(" · ") + ".", lewat.length && !tulis.length ? "err" : "ok");
+  } catch (err) { setMsg("hAdmMsg", "Impor gagal: " + pesanError(err), "err"); }
+});
+
+/** Pesan WhatsApp dari panitia ke peserta berisi tautan tiket. */
+function tautanWaTiket(p) {
+  const nomor = idDariWa(p.hp).replace(/^wa/, "");
+  const link = new URL("./", location.href).href + "?tiket=1";
+  const teks = `Assalamu'alaikum ${String(p.nama).replace(/^Contoh:\s*/, "")}. Pendaftaran ${acara.nama || "Khatmil Qur'an"} sudah kami terima.\n\nBuka tiket QR-mu di: ${link}\n(masuk dengan ${p.kategori && p.kategori !== "mahasiswa" ? "nomor WhatsApp" : "NIM"} dan PIN). Tunjukkan QR tiket ke panitia saat datang.`;
+  return `https://wa.me/${nomor}?text=${encodeURIComponent(teks)}`;
+}
+
+/* ---------- panitia memindai tiket peserta ---------- */
+let hentikanScan = null, terakhir = { teks: "", t: 0 }, tutupHasil = null;
+function sesiTerbuka() { return sesiList.filter(x => x.aktif); }
+function isiPilihanSesi() {
+  const buka = sesiTerbuka(), skr = $("sSesi").value || $("hFilter").value;
+  $("sSesi").innerHTML = buka.length ? buka.map(x => `<option value="${x.kode}">Catat ke: ${esc(x.nama)}</option>`).join("") : `<option value="">Belum ada sesi yang dibuka</option>`;
+  if (buka.some(x => x.kode === skr)) $("sSesi").value = skr;
+}
+function tampilHasil(jenis, judul, detail) {
+  const el = $("sHasil");
+  el.className = "s-hasil " + jenis; el.hidden = false;
+  el.innerHTML = `<span class="ikon">${jenis === "ok" ? "✓" : jenis === "warn" ? "!" : "✕"}</span><b>${esc(judul)}</b><span>${esc(detail || "")}</span>`;
+  clearTimeout(tutupHasil); tutupHasil = setTimeout(() => { el.hidden = true; }, jenis === "ok" ? 1800 : 2800);
+  try { navigator.vibrate?.(jenis === "ok" ? 60 : [80, 60, 80]); } catch {}
+}
+async function prosesTiket(teks, manual = false) {
+  const kode = $("sSesi").value;
+  if (!kode) return tampilHasil("err", "Belum ada sesi dibuka", "Buat atau buka sesi dulu di bagian Kehadiran.");
+  const sesi = sesiList.find(x => x.kode === kode);
+  const tk = bacaTiket(teks);
+  let id;
+  if (tk) id = tk.id;
+  else if (manual) { const t = teks.trim(); id = /^(\+?62|0)?8\d{7,}$/.test(t.replace(/[\s-]/g, "")) ? idDariWa(t) : bersihkanNim(t).toLowerCase(); }
+  else return tampilHasil("err", "Bukan QR tiket", "Minta peserta membuka Tiket saya di aplikasi.");
+  if (!id) return tampilHasil("err", "Isian tidak dikenali", "Ketik NIM atau nomor WhatsApp peserta.");
+  let p = peserta.find(x => x.nim === id);
+  if (!p) { try { const d = await getDoc(doc(db, "peserta", id)); if (d.exists()) p = d.data(); } catch {} }
+  if (!p) return tampilHasil("err", "Belum terdaftar", `${manual ? id : "Tiket ini"} tidak ditemukan. Minta peserta mendaftar dulu.`);
+  if (tk && p.tiket !== tk.token) return tampilHasil("err", "Tiket tidak sah", `QR tidak cocok dengan tiket ${p.nama}.`);
+  const docId = idHadir(kode, p.nim);
+  const sudah = hadirList.find(h => h._id === docId);
+  if (sudah) return tampilHasil("warn", p.nama, `Sudah tercatat hadir pukul ${new Date(sudah.waktu).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}.`);
+  try {
+    await setDoc(doc(db, "hadir", docId), { sesi: kode, namaSesi: sesi.nama, nim: p.nim, nama: p.nama, kategori: p.kategori || "mahasiswa", prodi: kelompok(p),
+      instansi: p.instansi || "", hp: p.hp || "", uid: p.uid || null, waktu: Date.now(), sumber: tk ? "tiket" : "manual" });
+    tampilHasil("ok", p.nama, `${kelompok(p)} · hadir di ${sesi.nama}`);
+  } catch (err) { tampilHasil("err", "Gagal mencatat", pesanError(err)); }
+}
+async function bukaScanTiket() {
+  isiPilihanSesi();
+  $("sTiket").hidden = false; $("sHasil").hidden = true; $("sMsg").textContent = "Membuka kamera…";
+  try {
+    hentikanScan = await mulaiPindai($("sVideo"), async teks => {
+      const kini = Date.now();
+      if (teks === terakhir.teks && kini - terakhir.t < 3500) return;     // QR yang sama masih di depan kamera
+      terakhir = { teks, t: kini };
+      await prosesTiket(teks);
+    });
+    $("sMsg").textContent = "Arahkan kamera ke QR tiket peserta";
+  } catch (e) {
+    $("sMsg").textContent = globalThis.KHATAM_DEMO ? "Pratinjau di Claude tidak boleh membuka kamera. Coba dengan mengetik NIM/WA di bawah."
+      : e?.name === "NotAllowedError" ? "Izin kamera ditolak. Izinkan kamera, atau ketik NIM/WA di bawah." : "Kamera tidak bisa dibuka. Ketik NIM/WA peserta di bawah.";
+  }
+}
+function tutupScanTiket() { hentikanScan?.(); hentikanScan = null; $("sTiket").hidden = true; }
+$("hScanTiket").addEventListener("click", bukaScanTiket);
+$("sSelesai").addEventListener("click", tutupScanTiket);
+$("sManual").addEventListener("submit", async e => { e.preventDefault(); const v = $("sId").value.trim(); if (!v) return; await prosesTiket(v, true); $("sId").value = ""; });
+document.addEventListener("visibilitychange", () => { if (document.hidden && !$("sTiket").hidden) tutupScanTiket(); });

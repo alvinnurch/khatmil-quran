@@ -1,8 +1,8 @@
 import { onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
-import { doc, getDoc, setDoc, writeBatch, collection, query, where, onSnapshot, runTransaction } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+import { doc, getDoc, setDoc, updateDoc, writeBatch, collection, query, where, onSnapshot, runTransaction } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import { bukaKartu } from "./kartu.js";
 import { halamanJuz, siapkanHalaman, gambarHalaman, paskanUkuran, prefetch } from "./mushaf.js";
-import { terapkanTema, ikon, inisial, alokasiJuz, idDariWa, KATEGORI, kelompok, tampilId } from "./common.js";
+import { terapkanTema, ikon, inisial, alokasiJuz, idDariWa, KATEGORI, kelompok, tampilId, PRODI, bersihkanKode, idHadir, kodeDariTeks, muatSkrip, kodeAcak, isiTiket, gambarQR, mulaiPindai, paletTema, hexValid, unduhBerkas } from "./common.js";
 import { auth, db, configBelumDiisi, emailNim, isAkunPeserta, nimDariUser, JUZ, rentangJuz, $, esc, angkaArab, bersihkanNim, lalu, setMsg, pesanError, kosongkanJuz } from "./common.js";
 
 let me = null;            // dokumen peserta
@@ -13,6 +13,18 @@ let unsub = [];
 let unsubPapan = null;
 let membaca = null, konfirmasi = false;
 let acara = {};
+let hadirSaya = [];
+let tiketBaru = false;
+let tiketTunda = (() => { try { const u = new URL(location.href); if (u.searchParams.has("tiket")) { u.searchParams.delete("tiket"); history.replaceState(null, "", u.pathname + u.search + u.hash); return true; } } catch {} return false; })();
+// QR panitia berisi tautan ...?hadir=KODE. Kode disimpan dulu bila peserta belum masuk.
+let kodeTunda = (() => {
+  try {
+    const u = new URL(location.href), k = bersihkanKode(u.searchParams.get("hadir"));
+    if (k.length === 6) { sessionStorage.setItem("khatam.hadir", k); u.searchParams.delete("hadir"); history.replaceState(null, "", u.pathname + u.search + u.hash); return k; }
+    return sessionStorage.getItem("khatam.hadir") || "";
+  } catch { return ""; }
+})();
+
 
 if (configBelumDiisi) $("cfgNote").hidden = false;
 
@@ -29,15 +41,23 @@ onSnapshot(doc(db, "pengaturan", "acara"), s => {
 onAuthStateChanged(auth, async user => {
   unsub.forEach(f => f()); unsub = [];
   if (unsubPapan) { unsubPapan(); unsubPapan = null; }
-  me = null; mine = []; papan = [];
-  if (!user) return render();
+  me = null; mine = []; papan = []; hadirSaya = [];
+  if (!user) {
+    if (kodeTunda) setMsg("lMsg", `Masuk atau daftar dulu. Kehadiran (kode ${kodeTunda}) akan dicatat otomatis setelahnya.`);
+    return render();
+  }
   if (!isAkunPeserta(user)) {           // akun panitia membuka halaman peserta
     $("authView").hidden = false;
     setMsg("lMsg", "Anda masuk sebagai panitia. Keluar dulu untuk masuk sebagai peserta.", "err");
     return;
   }
   const nim = nimDariUser(user);
-  unsub.push(onSnapshot(doc(db, "peserta", nim), s => { me = s.exists() ? s.data() : null; render(); }));
+  unsub.push(onSnapshot(doc(db, "peserta", nim), s => {
+    me = s.exists() ? s.data() : null; render();
+    if (me && kodeTunda) { const k = kodeTunda; kodeTunda = ""; try { sessionStorage.removeItem("khatam.hadir"); } catch {} checkIn(k); }
+    if (me && (tiketBaru || tiketTunda)) { const baru = tiketBaru; tiketBaru = false; tiketTunda = false; bukaTiket(baru); }
+  }));
+  unsub.push(onSnapshot(query(collection(db, "hadir"), where("uid", "==", user.uid)), s => { hadirSaya = s.docs.map(d => d.data()); renderHadir(); }, () => {}));
   unsub.push(onSnapshot(query(collection(db, "bacaan"), where("uid", "==", user.uid)), s => { mine = s.docs.map(d => ({ ...d.data(), _id: d.id })); render(); }));
   unsub.push(onSnapshot(doc(db, "state", "alokasi"), s => {
     const p = s.exists() ? (s.data().putaran || 1) : 1;
@@ -127,7 +147,7 @@ function pilihKategori(k) {
   $("lNim").placeholder = mhs ? "11210340000123" : "0812xxxxxxxx";
   $("lNim").inputMode = mhs ? "numeric" : "tel";
   $("rMhs").hidden = !mhs;
-  $("rHpKet").textContent = mhs ? "(opsional)" : "(dipakai untuk masuk)";
+  $("rHpKet").textContent = mhs ? "" : "(juga dipakai untuk masuk)";
   $("rInstansiBox").hidden = k !== "umum";
   setMsg("lMsg", ""); setMsg("rMsg", "");
 }
@@ -150,17 +170,21 @@ $("regForm").addEventListener("submit", async e => {
   const hp = $("rHp").value.trim(), pin = $("rPin").value;
   const prodi = mhs ? $("rProdi").value.trim() : KATEGORI[kategori];
   const instansi = kategori === "umum" ? $("rInstansi").value.trim() : "";
-  const id = mhs ? bersihkanNim($("rNim").value) : idDariWa(hp);
+  const waId = idDariWa(hp);
+  const id = mhs ? bersihkanNim($("rNim").value) : waId;
   if (!nama) return setMsg("rMsg", "Nama lengkap wajib diisi.", "err");
   if (mhs && (!id || !prodi)) return setMsg("rMsg", "NIM dan program studi wajib diisi.", "err");
-  if (!mhs && !id) return setMsg("rMsg", "Isi nomor WhatsApp yang benar (mis. 0812…). Nomor ini dipakai untuk masuk.", "err");
+  if (!waId) return setMsg("rMsg", "Isi nomor WhatsApp yang benar (mis. 0812…). Tiket QR dikirim ke nomor ini.", "err");
   if (pin.length < 6) return setMsg("rMsg", "PIN minimal 6 karakter.", "err");
   setMsg("rMsg", "Mendaftarkan…");
   try {
+    tiketBaru = true;
     const cred = await createUserWithEmailAndPassword(auth, emailNim(id), pin);
-    await setDoc(doc(db, "peserta", id.toLowerCase()), { nim: id.toLowerCase(), nama, kategori, prodi, instansi, hp, uid: cred.user.uid, aktif: null, daftar: Date.now() });
+    await setDoc(doc(db, "peserta", id.toLowerCase()), { nim: id.toLowerCase(), nama, kategori, prodi, instansi, hp: "0" + waId.slice(4),
+      tiket: kodeAcak(8), uid: cred.user.uid, aktif: null, daftar: Date.now() });
     setMsg("rMsg", ""); $("regForm").reset();
   } catch (err) {
+    tiketBaru = false;
     setMsg("rMsg", err?.code === "auth/email-already-in-use" ? `${mhs ? "NIM" : "Nomor WhatsApp"} ini sudah terdaftar. Silakan masuk.` : pesanError(err), "err");
   }
 });
@@ -199,7 +223,7 @@ $("assign").addEventListener("click", async ev => {
   if (!aktif) return;
   if (id === "readBtn") return bukaMushaf(aktif);
   if (id === "doneBtn") {
-    if (e.target.dataset.armed) { e.target.disabled = true; if (await tandaiSelesai(aktif)) bukaKartu({ nama: me.nama, juz: aktif.juz, putaran: aktif.putaran, selesai: Date.now() }, acara); return; }
+    if (e.target.dataset.armed) { e.target.disabled = true; if (await tandaiSelesai(aktif)) bukaKartu({ nama: me.nama, juz: aktif.juz, putaran: aktif.putaran, selesai: Date.now(), totalSaya: mine.filter(x => x.status === "selesai" && x._id !== aktif._id).length + 1 }, acara); return; }
     e.target.dataset.armed = "1"; e.target.textContent = "Yakin selesai?"; e.target.className = "btn btn-sm";
   }
   if (id === "returnBtn") {
@@ -407,7 +431,7 @@ $("rConfirm").addEventListener("click", async e => {
     if (await tandaiSelesai(membaca)) {
       const r = membaca;
       tutupMushaf();
-      bukaKartu({ nama: me.nama, juz: r.juz, putaran: r.putaran, selesai: Date.now() }, acara);
+      bukaKartu({ nama: me.nama, juz: r.juz, putaran: r.putaran, selesai: Date.now(), totalSaya: mine.filter(x => x.status === "selesai" && x._id !== r._id).length + 1 }, acara);
     } else { $("rEndText").textContent = "Laporan gagal tersimpan. Coba lagi."; konfirmasi = false; tombolKonfirmasi(); }
   }
 });
@@ -418,7 +442,7 @@ if (!auth.currentUser) $("authView").hidden = false;
 $("myList").addEventListener("click", e => {
   const id = e.target.dataset.kartu; if (!id) return;
   const r = mine.find(x => x._id === id);
-  if (r) bukaKartu({ nama: me.nama, juz: r.juz, putaran: r.putaran, selesai: r.selesai }, acara);
+  if (r) bukaKartu({ nama: me.nama, juz: r.juz, putaran: r.putaran, selesai: r.selesai, totalSaya: mine.filter(x => x.status === "selesai" && (x.selesai || 0) <= (r.selesai || 0)).length }, acara);
 });
 
 /* ---------- tab masuk / daftar ---------- */
@@ -430,3 +454,154 @@ $("tabMasuk").addEventListener("click", () => tab(false));
 $("tabDaftar").addEventListener("click", () => tab(true));
 
 $("rNotice").addEventListener("click", e => { if (e.target.id === "rCoba") gantiMode("halaman"); });
+
+/* ---------- program studi ---------- */
+$("rProdi").innerHTML = `<option value="">Pilih prodi…</option>` + PRODI.map(p => `<option>${esc(p)}</option>`).join("");
+
+/* ---------- kehadiran (check-in) ---------- */
+function renderHadir() {
+  const urut = [...hadirSaya].sort((a, b) => (b.waktu || 0) - (a.waktu || 0));
+  $("hadirJml").textContent = urut.length ? `Hadir di ${urut.length} sesi` : "Belum check-in";
+  $("hList").innerHTML = urut.map(h => `<li><span><b>${esc(h.namaSesi || h.sesi)}</b> <span class="muted">· ${new Date(h.waktu).toLocaleString("id-ID", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</span></span><span class="pill done">Hadir</span></li>`).join("");
+}
+
+async function checkIn(kode) {
+  kode = bersihkanKode(kode);
+  if (kode.length !== 6) return setMsg("hMsg", "Kode kehadiran terdiri dari 6 huruf/angka.", "err");
+  if (!me) { kodeTunda = kode; return; }
+  setMsg("hMsg", "Mencatat kehadiran…");
+  try {
+    const s = await getDoc(doc(db, "sesi", kode));
+    if (!s.exists()) return setMsg("hMsg", `Kode ${kode} tidak dikenal. Periksa lagi kodenya.`, "err");
+    const sesi = s.data();
+    if (!sesi.aktif) return setMsg("hMsg", `Check-in "${sesi.nama}" sudah ditutup panitia.`, "err");
+    const ref = doc(db, "hadir", idHadir(kode, me.nim));
+    if ((await getDoc(ref)).exists()) { $("hKode").value = ""; return setMsg("hMsg", `Kamu sudah tercatat hadir di "${sesi.nama}".`, "ok"); }
+    await setDoc(ref, { sesi: kode, namaSesi: sesi.nama, nim: me.nim, nama: me.nama, kategori: me.kategori || "mahasiswa", prodi: kelompok(me),
+      instansi: me.instansi || "", hp: me.hp || "", uid: auth.currentUser.uid, waktu: Date.now(), sumber: "scan" });
+    $("hKode").value = "";
+    setMsg("hMsg", `Alhamdulillah, kehadiran di "${sesi.nama}" tercatat.`, "ok");
+  } catch (err) {
+    setMsg("hMsg", err?.code === "permission-denied" ? "Check-in ditolak. Sesi mungkin sudah ditutup." : pesanError(err), "err");
+  }
+}
+$("hKodeForm").addEventListener("submit", e => { e.preventDefault(); checkIn($("hKode").value); });
+
+// Pemindai QR di dalam aplikasi.
+let hentikanPindai = null;
+function tutupPemindai() { hentikanPindai?.(); hentikanPindai = null; $("pemindai").hidden = true; }
+async function bukaPemindai() {
+  setMsg("hMsg", "");
+  $("pemindai").hidden = false; $("pMsg").textContent = "Membuka kamera…";
+  try {
+    hentikanPindai = await mulaiPindai($("pVideo"), teks => {
+      const kode = kodeDariTeks(teks);
+      if (kode) { tutupPemindai(); checkIn(kode); }
+      else $("pMsg").textContent = "Ini bukan QR kehadiran acara.";
+    });
+    $("pMsg").textContent = "Arahkan kamera ke QR kehadiran";
+  } catch (e) {
+    tutupPemindai();
+    if (globalThis.KHATAM_DEMO) return setMsg("hMsg", "Pratinjau di Claude tidak boleh membuka kamera. Untuk tes, ketik kode sesi di kolom Kode.", "err");
+    setMsg("hMsg", e?.name === "NotAllowedError" ? "Izin kamera ditolak. Ketik kode yang tertera di bawah QR." : "Kamera tidak bisa dibuka. Scan QR dengan aplikasi kamera HP, atau ketik kodenya.", "err");
+  }
+}
+$("hScan").addEventListener("click", bukaPemindai);
+$("pBatal").addEventListener("click", tutupPemindai);
+document.addEventListener("visibilitychange", () => { if (document.hidden && !$("pemindai").hidden) tutupPemindai(); });
+
+/* ---------- tiket peserta ---------- */
+const UK_TIKET = { w: 1080, h: 1480 };
+function kotakBulatT(c, x, y, w, h, r) { c.beginPath(); c.moveTo(x + r, y); c.arcTo(x + w, y, x + w, y + h, r); c.arcTo(x + w, y + h, x, y + h, r); c.arcTo(x, y + h, x, y, r); c.arcTo(x, y, x + w, y, r); c.closePath(); }
+async function gambarTiket(cv) {
+  const { w, h } = UK_TIKET; cv.width = w; cv.height = h;
+  const c = cv.getContext("2d");
+  const t = paletTema(hexValid(acara.warna) ? acara.warna : "#1f5c47").kartu;
+  try { await Promise.all(['700 60px "Plus Jakarta Sans"', '500 30px "Plus Jakarta Sans"'].map(f => document.fonts.load(f))); } catch {}
+  const F = '"Plus Jakarta Sans", system-ui, sans-serif';
+  c.fillStyle = t.latar; c.fillRect(0, 0, w, h);
+  c.save(); c.globalAlpha = .4; c.fillStyle = "#fff"; c.beginPath(); c.arc(w * .95, h * .02, w * .45, 0, Math.PI * 2); c.fill(); c.restore();
+  const m = 64, cw = w - 2 * m, potong = 560;
+  // badan tiket dengan lubang setengah lingkaran di garis sobek
+  c.save();
+  c.shadowColor = "rgba(0,0,0,.12)"; c.shadowBlur = 40; c.shadowOffsetY = 16;
+  kotakBulatT(c, m, m, cw, h - 2 * m, 48); c.fillStyle = "#fff"; c.fill(); c.restore();
+  c.save(); c.globalCompositeOperation = "destination-out";
+  [m, w - m].forEach(x => { c.beginPath(); c.arc(x, potong, 34, 0, Math.PI * 2); c.fill(); }); c.restore();
+  c.fillStyle = t.latar; [m, w - m].forEach(x => { c.beginPath(); c.arc(x, potong, 34, 0, Math.PI * 2); c.fill(); });
+  c.strokeStyle = "#d9d9d4"; c.lineWidth = 3; c.setLineDash([14, 12]); c.beginPath(); c.moveTo(m + 54, potong); c.lineTo(w - m - 54, potong); c.stroke(); c.setLineDash([]);
+
+  const xi = m + 56; let y = m + 56;
+  c.textBaseline = "top"; c.textAlign = "left";
+  let xT = xi;
+  if (logoTiket) {
+    const d = 96; c.fillStyle = t.latar; c.beginPath(); c.arc(xi + d / 2, y + d / 2, d / 2, 0, Math.PI * 2); c.fill();
+    const s = Math.min(d * .64 / logoTiket.width, d * .64 / logoTiket.height);
+    c.drawImage(logoTiket, xi + d / 2 - logoTiket.width * s / 2, y + d / 2 - logoTiket.height * s / 2, logoTiket.width * s, logoTiket.height * s);
+    xT = xi + d + 22;
+  }
+  c.fillStyle = "#151515"; c.font = `700 32px ${F}`;
+  const nmA = (acara.nama || "Khatmil Qur'an");
+  c.fillText(potongTeks(c, nmA, w - m - 56 - xT), xT, y + (acara.sub ? 14 : 30));
+  if (acara.sub) { c.fillStyle = "#6f6f69"; c.font = `500 24px ${F}`; c.fillText(potongTeks(c, acara.sub, w - m - 56 - xT), xT, y + 58); }
+  y += 140;
+  c.fillStyle = t.latar; kotakBulatT(c, xi, y, 250, 52, 26); c.fill();
+  c.fillStyle = t.tinta; c.font = `700 22px ${F}`; c.textBaseline = "middle"; c.fillText("TIKET PESERTA", xi + 26, y + 27); c.textBaseline = "top";
+  y += 82;
+  const nama = String(me.nama).replace(/^Contoh:\s*/, "");
+  c.fillStyle = "#151515"; c.font = `700 ${nama.length > 22 ? 56 : 68}px ${F}`; c.fillText(potongTeks(c, nama, cw - 112), xi, y);
+  y += nama.length > 22 ? 76 : 88;
+  c.fillStyle = "#6f6f69"; c.font = `500 30px ${F}`;
+  const ket = [me.kategori && me.kategori !== "mahasiswa" ? KATEGORI[me.kategori] : me.prodi, me.instansi].filter(Boolean).join(" · ");
+  c.fillText(potongTeks(c, ket, cw - 112), xi, y); y += 46;
+  c.fillText((me.kategori && me.kategori !== "mahasiswa" ? "WA " : "NIM ") + tampilId(me), xi, y);
+
+  const q = 600, qx = (w - q) / 2, qy = potong + 90;
+  await gambarQR(c, isiTiket(me.nim, me.tiket), qx, qy, q);
+  c.textAlign = "center"; c.fillStyle = "#151515"; c.font = `700 30px ${F}`;
+  c.fillText("Tunjukkan QR ini ke panitia saat datang", w / 2, qy + q + 50);
+  c.fillStyle = "#9a9a94"; c.font = `500 24px ${F}`;
+  c.fillText(`ID ${tampilId(me)} · ${me.tiket}`, w / 2, qy + q + 98);
+}
+function potongTeks(c, teks, maks) { let t = String(teks || ""); if (c.measureText(t).width <= maks) return t; while (t.length > 1 && c.measureText(t + "…").width > maks) t = t.slice(0, -1); return t + "…"; }
+let logoTiket = null;
+function teksWa() {
+  const link = new URL("./", location.href).href + "?tiket=1";
+  return `Assalamu'alaikum. Ini tiket ${acara.nama || "Khatmil Qur'an"}.\n\nNama: ${String(me.nama).replace(/^Contoh:\s*/, "")}\nID: ${tampilId(me)}\nKode tiket: ${me.tiket}\n\nTunjukkan QR tiket ke panitia saat datang. Buka tiket kapan saja di: ${link}`;
+}
+function bisaBagiBerkas() { try { return !!(navigator.canShare && navigator.canShare({ files: [new File([new Blob(["x"])], "x.png", { type: "image/png" })] })); } catch { return false; } }
+const tiketBlob = () => new Promise(ok => $("tCanvas").toBlob(ok, "image/png"));
+
+async function bukaTiket(baru = false) {
+  if (!me) return;
+  $("tiket").hidden = false; document.body.style.overflow = "hidden";
+  setMsg("tMsg", "");
+  $("tJudul").textContent = baru ? `Pendaftaran berhasil, ${String(me.nama).replace(/^Contoh:\s*/, "").split(" ")[0]}!` : "Tiket kamu";
+  $("tChip").lastChild.textContent = baru ? "Terdaftar" : "Tiket peserta";
+  if (!me.tiket) {
+    try { const token = kodeAcak(8); await updateDoc(doc(db, "peserta", me.nim), { tiket: token }); me = { ...me, tiket: token }; }
+    catch (err) { return setMsg("tMsg", "Tiket belum bisa dibuat: " + pesanError(err), "err"); }
+  }
+  if (acara.logo && !logoTiket) logoTiket = await new Promise(ok => { const i = new Image(); i.onload = () => ok(i); i.onerror = () => ok(null); i.src = acara.logo; });
+  try { await gambarTiket($("tCanvas")); } catch { setMsg("tMsg", "QR tiket gagal dibuat. Periksa koneksi lalu buka lagi.", "err"); }
+  const nomor = me.hp ? idDariWa(me.hp).replace(/^wa/, "") : "";
+  $("tWa").href = nomor ? `https://wa.me/${nomor}?text=${encodeURIComponent(teksWa())}` : `https://wa.me/?text=${encodeURIComponent(teksWa())}`;
+  $("tWaKet").textContent = bisaBagiBerkas()
+    ? "Pilih WhatsApp lalu kirim ke chat \"Anda\" (nomormu sendiri) agar gambar tiket tersimpan di WA."
+    : nomor ? `Membuka WhatsApp ke nomormu (${me.hp}) dengan pesan berisi kode dan tautan tiket. Simpan juga gambar tiketnya.` : "Simpan gambar tiket, lalu kirim ke WhatsApp-mu.";
+}
+function tutupTiket() { $("tiket").hidden = true; document.body.style.overflow = ""; }
+$("hTiket").addEventListener("click", () => bukaTiket(false));
+$("tTutup").addEventListener("click", tutupTiket);
+$("tWa").addEventListener("click", async e => {
+  if (!bisaBagiBerkas()) return;          // biarkan tautan wa.me terbuka seperti biasa
+  e.preventDefault();
+  const blob = await tiketBlob(); if (!blob) return;
+  try { await navigator.share({ files: [new File([blob], `tiket-${me.nim}.png`, { type: "image/png" })], text: teksWa() }); }
+  catch (err) { if (err?.name !== "AbortError") window.open($("tWa").href, "_blank", "noopener"); }
+});
+$("tSimpan").addEventListener("click", async () => {
+  const blob = await tiketBlob(); if (!blob) return;
+  try { await unduhBerkas(blob, `tiket-${me.nim}.png`); setMsg("tMsg", "Gambar tiket disimpan.", "ok"); }
+  catch { setMsg("tMsg", "Penyimpanan dibatalkan.", "err"); }
+});

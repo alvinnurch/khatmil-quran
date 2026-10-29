@@ -90,6 +90,38 @@
       </div>
     </section>
 
+    <section class="panel" id="hadirPanel">
+      <div class="board-head">
+        <div><h2>Kehadiran</h2><p class="muted" style="margin:4px 0 0;font-size:13px">Buat sesi, tampilkan QR-nya di lokasi, lalu peserta scan untuk check-in. Daftar hadir manual bisa diimpor dari template CSV.</p></div>
+        <div class="row">
+          <button class="btn btn-sm" id="hScanTiket" type="button">Scan tiket peserta</button>
+          <button class="btn-ghost btn-sm" id="hTemplate" type="button">Unduh template</button>
+          <label class="btn-ghost btn-sm tombol-file" for="hImpor">Impor CSV</label>
+          <input id="hImpor" type="file" accept=".csv,text/csv" class="sr">
+          <button class="btn-ghost btn-sm" id="hCsv" type="button">Unduh CSV</button>
+        </div>
+      </div>
+      <form id="sesiForm" class="row" style="gap:8px;flex-wrap:nowrap" novalidate>
+        <input id="sesiNama" placeholder="Nama sesi baru, mis. Ushuluddin Mengaji – Hari 1" style="flex:1;min-width:0">
+        <button class="btn btn-sm" type="submit" style="flex:none">Buat sesi</button>
+      </form>
+      <div class="msg" id="hAdmMsg" role="status" style="margin-top:8px"></div>
+      <div class="sesi-grid" id="sesiList"></div>
+      <div class="board-head" style="margin:20px 0 8px">
+        <h3>Daftar hadir <span class="muted num" id="hJumlah"></span></h3>
+        <div class="row">
+          <select id="hFilter" style="width:auto;padding:10px 14px;border-radius:999px" aria-label="Saring sesi"><option value="">Semua sesi</option></select>
+          <input id="hCari" class="search" placeholder="Cari nama, NIM, kelompok">
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Waktu</th><th>Nama</th><th>NIM / WhatsApp</th><th>Kelompok</th><th>Sesi</th><th>Cara</th><th></th></tr></thead>
+          <tbody id="hBody"></tbody>
+        </table>
+      </div>
+    </section>
+
     <section class="panel">
       <div class="board-head">
         <h2>Peserta</h2>
@@ -148,6 +180,34 @@
     <div class="big num" id="scKhatam">0</div>
     <div class="sub">kali khatam · <span class="num" id="scJuz">0</span> juz dibaca</div>
   </div>
+</div>
+
+<div class="screen qr-layar" id="qrLayar" hidden role="dialog" aria-modal="true" aria-label="QR kehadiran">
+  <button class="btn-ghost exit" id="qrTutup" type="button">Tutup</button>
+  <div class="qr-isi">
+    <div class="sub" id="qrAcara">Khatmil Qur'an</div>
+    <h1 id="qrSesi" style="font-size:clamp(26px,5vh,48px)">Sesi</h1>
+    <div class="qr-kotak" id="qrGambar"></div>
+    <div class="qr-kode num" id="qrKode">––––––</div>
+    <div class="sub" style="font-size:clamp(15px,2vw,20px)">Scan dengan kamera HP, atau buka aplikasi lalu ketik kode di atas.</div>
+    <div class="chip" style="justify-self:center;font-size:15px;padding:8px 16px"><i style="background:var(--done)"></i><span id="qrJumlah">0</span> sudah check-in</div>
+  </div>
+</div>
+
+<div class="kamera" id="sTiket" hidden role="dialog" aria-modal="true" aria-label="Scan tiket peserta">
+  <video id="sVideo" playsinline autoplay muted class="belakang"></video>
+  <div class="bidik" aria-hidden="true"></div>
+  <div class="s-atas">
+    <label for="sSesi" class="sr">Sesi</label>
+    <select id="sSesi" aria-label="Catat kehadiran untuk sesi"></select>
+    <button class="kamera-btn" id="sSelesai" type="button">Selesai</button>
+  </div>
+  <div class="s-hasil" id="sHasil" hidden></div>
+  <div class="kamera-pesan s-pesan" id="sMsg" role="status">Arahkan kamera ke QR tiket peserta</div>
+  <form class="s-manual" id="sManual" novalidate>
+    <input id="sId" placeholder="Tanpa tiket? Ketik NIM / No. WA" autocomplete="off" aria-label="NIM atau nomor WhatsApp">
+    <button class="btn-gold btn-sm" type="submit">Catat</button>
+  </form>
 </div>
 
 <script type="module" src="js/panitia.js"></script>

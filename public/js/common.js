@@ -165,7 +165,7 @@ export function paletTema(hex) {
   return {
     terang: { bg: hsl(h, sn, 94), sunk: hsl(h, sn, 95.5), line: hsl(h, sn, 89), accent: hex, "accent-soft": hsl(h, sp, 88), "accent-ink": hsl(h, sk, 20) },
     gelap: { bg: hsl(h, sn, 7), surface: hsl(h, sn, 11), sunk: hsl(h, sn, 14), line: hsl(h, sn, 18), accent: hsl(h, sk, 66), "accent-soft": hsl(h, batas(s, 15, 40), 20), "accent-ink": hsl(h, sk, 86) },
-    kartu: { latar: hsl(h, sp, 88), latar2: hsl(h, sp, 82), aksen: hex, tinta: hsl(h, sk, 16) },
+    kartu: { latar: hsl(h, sp, 88), latar2: hsl(h, sp, 82), lembut: hsl(h, sp, 94), aksen: hex, tinta: hsl(h, sk, 16), gelap: hsl(h, batas(s, 20, 55), 15), gelap2: hsl(h, batas(s, 20, 55), 8) },
   };
 }
 export function terapkanTema(hex) {
@@ -200,3 +200,118 @@ const JALUR = {
 };
 export const ikon = (n, ukuran = 20) => `<svg class="i" viewBox="0 0 24 24" width="${ukuran}" height="${ukuran}" aria-hidden="true">${JALUR[n] || ""}</svg>`;
 export const inisial = nama => String(nama || "?").replace(/^Contoh:\s*/, "").split(/\s+/).filter(Boolean).slice(0, 2).map(k => k[0]).join("").toUpperCase();
+
+/* ---------- program studi ---------- */
+export const PRODI = ["Ilmu Al-Qur'an dan Tafsir", "Ilmu Hadis", "Akidah dan Filsafat Islam", "Studi Agama-Agama", "Magister Ilmu Al-Qur'an dan Tafsir", "Magister Studi Agama-Agama"];
+
+/* ---------- kehadiran ---------- */
+const HURUF_KODE = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";   // tanpa huruf/angka yang mirip (0/O, 1/I/L)
+export function kodeAcak(n = 6) {
+  const a = new Uint32Array(n); crypto.getRandomValues(a);
+  return [...a].map(v => HURUF_KODE[v % HURUF_KODE.length]).join("");
+}
+export const bersihkanKode = s => String(s || "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6);
+export const idHadir = (kode, id) => `${kode}__${String(id).toLowerCase()}`;
+/** Ambil kode kehadiran dari teks QR: URL berisi ?hadir=KODE, atau kode polos. */
+export function kodeDariTeks(teks) {
+  const t = String(teks || "").trim();
+  try { const u = new URL(t); const k = u.searchParams.get("hadir"); if (k) return bersihkanKode(k); } catch {}
+  return /^[A-Za-z0-9]{6}$/.test(t) ? t.toUpperCase() : "";
+}
+
+/* ---------- CSV ---------- */
+export function keCSV(baris) {
+  const sel = v => `"${String(v ?? "").replace(/"/g, '""')}"`;
+  return "﻿" + baris.map(b => b.map(sel).join(",")).join("\r\n");
+}
+/** Baca CSV (pemisah koma atau titik koma, mendukung tanda kutip). */
+export function bacaCSV(teks) {
+  teks = String(teks).replace(/^﻿/, "");
+  const barisPertama = teks.split(/\r?\n/)[0] || "";
+  const pisah = (barisPertama.match(/;/g) || []).length > (barisPertama.match(/,/g) || []).length ? ";" : ",";
+  const hasil = []; let sel = "", baris = [], kutip = false;
+  for (let i = 0; i < teks.length; i++) {
+    const ch = teks[i];
+    if (kutip) {
+      if (ch === '"' && teks[i + 1] === '"') { sel += '"'; i++; }
+      else if (ch === '"') kutip = false;
+      else sel += ch;
+    } else if (ch === '"') kutip = true;
+    else if (ch === pisah) { baris.push(sel); sel = ""; }
+    else if (ch === "\n" || ch === "\r") { if (ch === "\r" && teks[i + 1] === "\n") i++; baris.push(sel); hasil.push(baris); baris = []; sel = ""; }
+    else sel += ch;
+  }
+  if (sel !== "" || baris.length) { baris.push(sel); hasil.push(baris); }
+  return hasil.filter(b => b.some(v => v.trim() !== ""));
+}
+/** Simpan berkas: pakai jembatan versi uji bila ada, selain itu unduhan biasa. */
+export async function unduhBerkas(blob, nama) {
+  if (globalThis.KHATAM_SIMPAN) return globalThis.KHATAM_SIMPAN(blob, nama);
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob); a.download = nama; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+}
+/** Muat pustaka skrip dari CDN sekali saja. */
+const muatan = {};
+export function muatSkrip(url) {
+  return muatan[url] ??= new Promise((ok, gagal) => {
+    const s = document.createElement("script"); s.src = url; s.async = true;
+    s.onload = ok; s.onerror = () => { delete muatan[url]; gagal(new Error("gagal memuat " + url)); };
+    document.head.appendChild(s);
+  });
+}
+
+/* ---------- tiket peserta ---------- */
+// Isi QR tiket: KHATAM:<id peserta>:<token acak>. Token disimpan di dokumen peserta, jadi tiket tidak bisa dipalsukan
+// hanya dengan menebak NIM/nomor WA.
+export const URL_QR_LIB = "https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js";
+export const URL_JSQR = "https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js";
+export const isiTiket = (id, token) => `KHATAM:${id}:${token}`;
+export function bacaTiket(teks) {
+  const m = /^KHATAM:([a-z0-9-]+):([A-Z0-9]{6,12})$/i.exec(String(teks || "").trim());
+  return m ? { id: m[1].toLowerCase(), token: m[2].toUpperCase() } : null;
+}
+/** Gambar QR ke kanvas (kotak hitam di atas latar putih). */
+export async function gambarQR(c, teks, x, y, ukuran, warna = "#151515") {
+  await muatSkrip(URL_QR_LIB);
+  const qr = window.qrcode(0, "M"); qr.addData(teks); qr.make();
+  const n = qr.getModuleCount(), sel = ukuran / n;
+  c.fillStyle = warna;
+  for (let r = 0; r < n; r++) for (let k = 0; k < n; k++) if (qr.isDark(r, k)) c.fillRect(x + k * sel, y + r * sel, Math.ceil(sel), Math.ceil(sel));
+}
+
+/**
+ * Pemindai QR memakai kamera. BarcodeDetector bila ada (Chrome Android), selain itu pustaka jsQR.
+ * Memanggil onTeks(teks) setiap kali QR terbaca. Mengembalikan fungsi untuk menghentikan kamera.
+ */
+export async function mulaiPindai(video, onTeks, { hadap = "environment" } = {}) {
+  if (!navigator.mediaDevices?.getUserMedia || !window.isSecureContext) throw Object.assign(new Error("tanpa kamera"), { name: "NotSupportedError" });
+  let detektor = null;
+  if ("BarcodeDetector" in window) {
+    try { if ((await BarcodeDetector.getSupportedFormats()).includes("qr_code")) detektor = new BarcodeDetector({ formats: ["qr_code"] }); } catch {}
+  }
+  if (!detektor) await muatSkrip(URL_JSQR);
+  const aliran = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: hadap } }, audio: false });
+  video.srcObject = aliran; await video.play().catch(() => {});
+  let jalan = true;
+  const cv = document.createElement("canvas"), g = cv.getContext("2d", { willReadFrequently: true });
+  const pindai = async () => {
+    if (!jalan) return;
+    if (video.readyState >= 2 && video.videoWidth) {
+      let teks = "";
+      try {
+        if (detektor) teks = (await detektor.detect(video))[0]?.rawValue || "";
+        else {
+          const s = Math.min(1, 640 / Math.max(video.videoWidth, video.videoHeight));
+          cv.width = video.videoWidth * s | 0; cv.height = video.videoHeight * s | 0;
+          g.drawImage(video, 0, 0, cv.width, cv.height);
+          teks = window.jsQR(g.getImageData(0, 0, cv.width, cv.height).data, cv.width, cv.height, { inversionAttempts: "dontInvert" })?.data || "";
+        }
+      } catch {}
+      if (teks && jalan) { try { await onTeks(teks); } catch {} }
+    }
+    if (jalan) setTimeout(pindai, 160);
+  };
+  pindai();
+  return () => { jalan = false; aliran.getTracks().forEach(t => t.stop()); video.srcObject = null; };
+}
