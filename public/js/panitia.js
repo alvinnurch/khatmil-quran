@@ -341,11 +341,12 @@ $("hImpor").addEventListener("change", async e => {
   const bawaan = $("hFilter").value;
   const ada = new Set(hadirList.map(h => h._id)), kodeAda = new Set(sesiList.map(x => x.kode));
   const tulis = [], lewat = [];
-  let sudah = 0;
+  let sudah = 0, contoh = 0;
   rows.slice(1).forEach((r, i) => {
     const ambil = n => (ix(n) >= 0 ? String(r[ix(n)] ?? "") : "").trim();
     const noBaris = i + 2, nama = ambil("nama");
-    if (!nama || /^contoh\b/i.test(nama)) { if (!nama) lewat.push(`baris ${noBaris}: nama kosong`); return; }
+    if (!nama) return lewat.push(`baris ${noBaris}: nama kosong`);
+    if (barisContoh(nama)) { contoh++; return; }
     const kode = bersihkanKode(ambil("kode_sesi")) || bawaan;
     if (!kode) return lewat.push(`baris ${noBaris}: kode_sesi kosong (atau pilih sesi di daftar hadir)`);
     if (!kodeAda.has(kode)) return lewat.push(`baris ${noBaris}: sesi ${kode} tidak ada`);
@@ -371,8 +372,9 @@ $("hImpor").addEventListener("change", async e => {
     }
     const info = [`${tulis.length} kehadiran diimpor`];
     if (sudah) info.push(`${sudah} sudah tercatat sebelumnya`);
+    if (contoh) info.push(`${contoh} baris contoh dari template dilewati (ganti dengan data asli)`);
     if (lewat.length) info.push(`${lewat.length} dilewati (${lewat.slice(0, 3).join("; ")}${lewat.length > 3 ? "; …" : ""})`);
-    setMsg("hAdmMsg", info.join(" · ") + ".", lewat.length && !tulis.length ? "err" : "ok");
+    setMsg("hAdmMsg", info.join(" · ") + ".", !tulis.length ? "err" : "ok");
   } catch (err) { setMsg("hAdmMsg", "Impor gagal: " + pesanError(err), "err"); }
 });
 
@@ -647,6 +649,9 @@ $("pesertaBody").addEventListener("click", async e => {
 });
 
 /* ---------- impor daftar peserta ---------- */
+// Baris contoh bawaan template dilewati, tapi dilaporkan supaya panitia tahu kenapa tidak ada yang masuk.
+const NAMA_CONTOH = new Set(["contoh mahasiswa", "contoh dosen", "contoh peserta luar"]);
+const barisContoh = nama => NAMA_CONTOH.has(nama.trim().toLowerCase());
 const KOLOM_P = ["nama", "kategori", "nim", "prodi", "no_wa", "instansi"];
 $("pTemplate").addEventListener("click", async () => {
   const baris = [KOLOM_P,
@@ -667,12 +672,12 @@ $("pImpor").addEventListener("change", async e => {
   const ix = n => kepala.indexOf(n);
   if (ix("nama") < 0) return setMsg("pMsg", 'Kolom "nama" tidak ditemukan. Pakai template dari tombol "Unduh template peserta".', "err");
   const ada = new Set(peserta.map(p => p.nim)), tulis = [], lewat = [];
-  let sudah = 0;
+  let sudah = 0, contoh = 0;
   rows.slice(1).forEach((r, i) => {
     const ambil = n => (ix(n) >= 0 ? String(r[ix(n)] ?? "") : "").trim();
     const noBaris = i + 2, nama = ambil("nama").replace(/\s+/g, " ");
     if (!nama) return lewat.push(`baris ${noBaris}: nama kosong`);
-    if (/^contoh\b/i.test(nama)) return;
+    if (barisContoh(nama)) { contoh++; return; }
     let kat = ambil("kategori").toLowerCase();
     kat = kat.startsWith("dos") ? "dosen" : (kat.startsWith("umum") || kat.startsWith("luar") || kat.startsWith("peserta")) ? "umum" : "mahasiswa";
     const waId = idDariWa(ambil("no_wa"));
@@ -692,7 +697,8 @@ $("pImpor").addEventListener("change", async e => {
     }
     const info = [`${tulis.length} peserta diimpor`];
     if (sudah) info.push(`${sudah} sudah terdaftar sebelumnya`);
+    if (contoh) info.push(`${contoh} baris contoh dari template dilewati (hapus atau ganti dengan data peserta asli)`);
     if (lewat.length) info.push(`${lewat.length} dilewati (${lewat.slice(0, 3).join("; ")}${lewat.length > 3 ? "; …" : ""})`);
-    setMsg("pMsg", info.join(" · ") + ". Kirim tautan masuk lewat tombol \"Kirim tiket\" di tabel.", lewat.length && !tulis.length ? "err" : "ok");
+    setMsg("pMsg", info.join(" · ") + "." + (tulis.length ? ' Kirim tautan masuk lewat tombol "Kirim tiket" di tabel.' : ""), tulis.length ? "ok" : "err");
   } catch (err) { setMsg("pMsg", "Impor gagal: " + pesanError(err), "err"); }
 });
