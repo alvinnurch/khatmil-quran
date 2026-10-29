@@ -1,6 +1,6 @@
 import { onAuthStateChanged, signInWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
 import { doc, getDoc, setDoc, updateDoc, deleteDoc, writeBatch, collection, onSnapshot } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
-import { terapkanTema, WARNA_PRESET, hexValid, kelompok, tampilId, kodeAcak, idHadir, keCSV, bacaCSV, unduhBerkas, muatSkrip, KATEGORI, idDariWa, bersihkanNim, bersihkanKode, bacaTiket, mulaiPindai, URL_QR_LIB, inisial } from "./common.js";
+import { terapkanTema, WARNA_PRESET, hexValid, kelompok, tampilId, kodeAcak, idHadir, keCSV, bacaCSV, unduhBerkas, muatSkrip, KATEGORI, idDariWa, bersihkanNim, bersihkanKode, bacaTiket, mulaiPindai, URL_QR_LIB, inisial, PRODI } from "./common.js";
 import { auth, db, configBelumDiisi, isAkunPeserta, rentangJuz, $, esc, lalu, setMsg, pesanError, kosongkanJuz, ringkas } from "./common.js";
 
 let bacaan = [], peserta = [], acara = {}, unsub = [];
@@ -119,10 +119,12 @@ function renderPeserta() {
   const rows = peserta
     .filter(p => !q || `${p.nama} ${p.nim} ${tampilId(p)} ${kelompok(p)} ${p.instansi || ""}`.toLowerCase().includes(q))
     .sort((a, b) => (hitung[b.nim] || 0) - (hitung[a.nim] || 0) || a.nama.localeCompare(b.nama));
+  const belum = peserta.filter(p => !p.uid).length;
+  $("pRingkas").textContent = peserta.length ? `${peserta.length} peserta${belum ? ` · ${belum} belum pernah masuk` : ""}` : "";
   $("pesertaBody").innerHTML = rows.length ? rows.map(p => {
     const aktif = p.aktif ? bacaan.find(r => r._id === p.aktif) : null;
     return `<tr><td class="wrap">${esc(p.nama)}</td><td class="num">${esc(tampilId(p))}</td><td>${esc(kelompok(p))}${p.instansi ? `<span class="muted"> · ${esc(p.instansi)}</span>` : ""}</td><td class="num">${hitung[p.nim] || 0}</td>
-      <td>${aktif ? `<span class="pill busy">Membaca juz ${aktif.juz}</span>` : `<span class="muted">—</span>`}</td><td>${p.hp ? `${esc(p.hp)} <a class="btn-link" href="${tautanWaTiket(p)}" target="_blank" rel="noopener">Kirim tiket</a>` : `<span class="muted">—</span>`}</td>
+      <td>${aktif ? `<span class="pill busy">Membaca juz ${aktif.juz}</span>` : !p.uid ? `<span class="pill" style="background:var(--sky)">Belum masuk</span>` : `<span class="muted">—</span>`}</td><td>${p.hp ? `${esc(p.hp)} <a class="btn-link" href="${tautanWaTiket(p)}" target="_blank" rel="noopener">Kirim tiket</a>` : `<span class="muted">—</span>`}</td>
       <td><button class="btn-link" data-hapus-peserta="${esc(p.nim)}" type="button">Hapus</button></td></tr>`;
   }).join("") : `<tr><td colspan="7" class="empty">${peserta.length ? "Tidak ada yang cocok." : "Belum ada peserta terdaftar."}</td></tr>`;
 }
@@ -378,7 +380,10 @@ $("hImpor").addEventListener("change", async e => {
 function tautanWaTiket(p) {
   const nomor = idDariWa(p.hp).replace(/^wa/, "");
   const link = new URL("./", location.href).href + "?tiket=1";
-  const teks = `Assalamu'alaikum ${String(p.nama).replace(/^Contoh:\s*/, "")}. Pendaftaran ${acara.nama || "Khatmil Qur'an"} sudah kami terima.\n\nBuka tiket QR-mu di: ${link}\n(masuk dengan ${p.kategori && p.kategori !== "mahasiswa" ? "nomor WhatsApp" : "NIM"} dan PIN). Tunjukkan QR tiket ke panitia saat datang.`;
+  const sapa = `Assalamu'alaikum ${String(p.nama).replace(/^Contoh:\s*/, "")}.`, idTeks = p.kategori && p.kategori !== "mahasiswa" ? "nomor WhatsApp" : "NIM";
+  const teks = p.uid
+    ? `${sapa} Pendaftaran ${acara.nama || "Khatmil Qur'an"} sudah kami terima.\n\nBuka tiket QR-mu di: ${link}\n(masuk dengan ${idTeks} dan PIN). Tunjukkan QR tiket ke panitia saat datang.`
+    : `${sapa} Kamu sudah kami daftarkan sebagai peserta ${acara.nama || "Khatmil Qur'an"}, tidak perlu mendaftar lagi.\n\n1. Buka ${link}\n2. Pilih "Pertama kali masuk"\n3. Isi ${idTeks} ${tampilId(p)}, nomor WhatsApp ini, lalu buat PIN.\n\nTiket QR-mu langsung muncul. Tunjukkan ke panitia saat datang.`;
   return `https://wa.me/${nomor}?text=${encodeURIComponent(teks)}`;
 }
 
@@ -639,4 +644,55 @@ $("pesertaBody").addEventListener("click", async e => {
     if (p?.aktif) { try { await kosongkanJuz(p.aktif); } catch {} }
     await deleteDoc(doc(db, "peserta", nim));
   } catch (err) { e.target.textContent = "Gagal"; }
+});
+
+/* ---------- impor daftar peserta ---------- */
+const KOLOM_P = ["nama", "kategori", "nim", "prodi", "no_wa", "instansi"];
+$("pTemplate").addEventListener("click", async () => {
+  const baris = [KOLOM_P,
+    ["Contoh Mahasiswa", "mahasiswa", "11210340000123", "Ilmu Hadis", "081234567890", ""],
+    ["Contoh Dosen", "dosen", "", "", "081298765432", ""],
+    ["Contoh Peserta Luar", "umum", "", "", "085712345678", "Alumni 2015"]];
+  try { await unduhBerkas(new Blob([keCSV(baris)], { type: "text/csv;charset=utf-8" }), "template-peserta.csv"); }
+  catch { setMsg("pMsg", "Unduhan dibatalkan.", "err"); }
+});
+$("pImpor").addEventListener("change", async e => {
+  const file = e.target.files[0]; e.target.value = "";
+  if (!file) return;
+  setMsg("pMsg", "Membaca berkas…");
+  let rows;
+  try { rows = bacaCSV(await file.text()); } catch { return setMsg("pMsg", "Berkas tidak bisa dibaca. Simpan sebagai CSV lalu coba lagi.", "err"); }
+  if (rows.length < 2) return setMsg("pMsg", "Berkas kosong. Isi data di bawah baris judul kolom.", "err");
+  const kepala = rows[0].map(k => k.trim().toLowerCase().replace(/\s+/g, "_").replace(/^no_?(hp|wa|whatsapp)$/, "no_wa"));
+  const ix = n => kepala.indexOf(n);
+  if (ix("nama") < 0) return setMsg("pMsg", 'Kolom "nama" tidak ditemukan. Pakai template dari tombol "Unduh template peserta".', "err");
+  const ada = new Set(peserta.map(p => p.nim)), tulis = [], lewat = [];
+  let sudah = 0;
+  rows.slice(1).forEach((r, i) => {
+    const ambil = n => (ix(n) >= 0 ? String(r[ix(n)] ?? "") : "").trim();
+    const noBaris = i + 2, nama = ambil("nama").replace(/\s+/g, " ");
+    if (!nama) return lewat.push(`baris ${noBaris}: nama kosong`);
+    if (/^contoh\b/i.test(nama)) return;
+    let kat = ambil("kategori").toLowerCase();
+    kat = kat.startsWith("dos") ? "dosen" : (kat.startsWith("umum") || kat.startsWith("luar") || kat.startsWith("peserta")) ? "umum" : "mahasiswa";
+    const waId = idDariWa(ambil("no_wa"));
+    const id = kat === "mahasiswa" ? bersihkanNim(ambil("nim")).toLowerCase() : waId;
+    if (!id) return lewat.push(`baris ${noBaris}: ${kat === "mahasiswa" ? "NIM" : "nomor WA"} kosong/tidak valid`);
+    if (ada.has(id)) { sudah++; return; }
+    ada.add(id);
+    const prodiMentah = ambil("prodi"), prodi = PRODI.find(p => p.toLowerCase() === prodiMentah.toLowerCase()) || prodiMentah;
+    tulis.push([id, { nim: id, nama, kategori: kat, prodi: kat === "mahasiswa" ? (prodi || "Mahasiswa") : KATEGORI[kat], instansi: ambil("instansi"),
+      hp: waId ? "0" + waId.slice(4) : "", tiket: kodeAcak(8), uid: null, aktif: null, daftar: Date.now(), sumber: "impor" }]);
+  });
+  try {
+    for (let i = 0; i < tulis.length; i += 400) {
+      const b = writeBatch(db);
+      tulis.slice(i, i + 400).forEach(([id, d]) => b.set(doc(db, "peserta", id), d));
+      await b.commit();
+    }
+    const info = [`${tulis.length} peserta diimpor`];
+    if (sudah) info.push(`${sudah} sudah terdaftar sebelumnya`);
+    if (lewat.length) info.push(`${lewat.length} dilewati (${lewat.slice(0, 3).join("; ")}${lewat.length > 3 ? "; …" : ""})`);
+    setMsg("pMsg", info.join(" · ") + ". Kirim tautan masuk lewat tombol \"Kirim tiket\" di tabel.", lewat.length && !tulis.length ? "err" : "ok");
+  } catch (err) { setMsg("pMsg", "Impor gagal: " + pesanError(err), "err"); }
 });

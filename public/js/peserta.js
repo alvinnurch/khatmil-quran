@@ -1,8 +1,8 @@
-import { onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
+import { onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, deleteUser } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
 import { doc, getDoc, setDoc, updateDoc, writeBatch, collection, query, where, onSnapshot, runTransaction } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import { bukaKartu } from "./kartu.js";
 import { halamanJuz, siapkanHalaman, gambarHalaman, paskanUkuran, prefetch } from "./mushaf.js";
-import { terapkanTema, ikon, inisial, alokasiJuz, idDariWa, KATEGORI, kelompok, tampilId, PRODI, bersihkanKode, idHadir, kodeDariTeks, muatSkrip, kodeAcak, isiTiket, gambarQR, mulaiPindai, paletTema, hexValid, unduhBerkas } from "./common.js";
+import { terapkanTema, ikon, inisial, alokasiJuz, idDariWa, KATEGORI, kelompok, tampilId, PRODI, bersihkanKode, idHadir, kodeDariTeks, muatSkrip, kodeAcak, isiTiket, gambarQR, mulaiPindai, paletTema, hexValid, unduhBerkas, namaPanggil } from "./common.js";
 import { auth, db, configBelumDiisi, emailNim, isAkunPeserta, nimDariUser, JUZ, rentangJuz, $, esc, angkaArab, bersihkanNim, lalu, setMsg, pesanError, kosongkanJuz } from "./common.js";
 
 let me = null;            // dokumen peserta
@@ -87,7 +87,7 @@ function render() {
   if (!masuk) return;
 
   $("whoInit").textContent = inisial(me.nama);
-  $("whoName").textContent = me.nama.replace(/^Contoh:\s*/, "").split(" ")[0];
+  $("whoName").textContent = namaPanggil(me.nama);
   $("whoNim").textContent = (me.kategori && me.kategori !== "mahasiswa")
     ? `${KATEGORI[me.kategori]}${me.instansi ? " · " + me.instansi : ""}`
     : `NIM ${me.nim}${me.prodi ? " · " + me.prodi : ""}`;
@@ -159,12 +159,13 @@ $("katPilih").addEventListener("click", e => { const b = e.target.closest("[data
 
 $("loginForm").addEventListener("submit", async e => {
   e.preventDefault();
+  if (modePertama) return aktivasi();
   const mhs = kategori === "mahasiswa";
   const id = mhs ? bersihkanNim($("lNim").value) : idDariWa($("lNim").value), pin = $("lPin").value;
   if (!id || !pin) return setMsg("lMsg", mhs ? "Isi NIM dan PIN." : "Isi nomor WhatsApp yang benar (mis. 0812…) dan PIN.", "err");
   setMsg("lMsg", "Memeriksa…");
   try { await signInWithEmailAndPassword(auth, emailNim(id), pin); setMsg("lMsg", ""); $("loginForm").reset(); }
-  catch (err) { setMsg("lMsg", err?.code === "auth/invalid-credential" ? `${mhs ? "NIM" : "Nomor WhatsApp"} atau PIN salah, atau belum terdaftar.` : pesanError(err), "err"); }
+  catch (err) { setMsg("lMsg", err?.code === "auth/invalid-credential" ? `${mhs ? "NIM" : "Nomor WhatsApp"} atau PIN salah. Kalau datamu diinput panitia dan belum pernah masuk, pilih "Pertama kali masuk" di bawah.` : pesanError(err), "err"); }
 });
 
 $("regForm").addEventListener("submit", async e => {
@@ -186,6 +187,13 @@ $("regForm").addEventListener("submit", async e => {
   try {
     tiketBaru = true; sedangDaftar = true;
     const cred = await createUserWithEmailAndPassword(auth, emailNim(id), pin);
+    const ada = await getDoc(doc(db, "peserta", id.toLowerCase())).catch(() => null);
+    if (ada?.exists()) {                       // NIM ini sudah diinput panitia: klaim datanya, jangan menimpa
+      const hasil = await klaim(cred.user, id.toLowerCase(), ada.data(), waId);
+      sedangDaftar = false;
+      if (!hasil.ok) { tiketBaru = false; return setMsg("rMsg", hasil.pesan, "err"); }
+      setMsg("rMsg", ""); $("regForm").reset(); return;
+    }
     await setDoc(doc(db, "peserta", id.toLowerCase()), { nim: id.toLowerCase(), nama, kategori, prodi, instansi, hp: "0" + waId.slice(4),
       tiket: kodeAcak(8), uid: cred.user.uid, aktif: null, daftar: Date.now() });
     sedangDaftar = false;
@@ -583,7 +591,7 @@ async function bukaTiket(baru = false) {
   if (!me) return;
   $("tiket").hidden = false; document.body.style.overflow = "hidden";
   setMsg("tMsg", "");
-  $("tJudul").textContent = baru ? `Pendaftaran berhasil, ${String(me.nama).replace(/^Contoh:\s*/, "").split(" ")[0]}!` : "Tiket kamu";
+  $("tJudul").textContent = baru ? `Pendaftaran berhasil, ${namaPanggil(me.nama)}!` : "Tiket kamu";
   $("tChip").lastChild.textContent = baru ? "Terdaftar" : "Tiket peserta";
   if (!me.tiket) {
     try { const token = kodeAcak(8); await updateDoc(doc(db, "peserta", me.nim), { tiket: token }); me = { ...me, tiket: token }; }
@@ -642,4 +650,64 @@ async function daftarUlang(akun) {
       hp: "0" + waId.slice(4), tiket: kodeAcak(8), uid: akun.uid, aktif: null, daftar: Date.now() });
     $("rPin").closest("label").hidden = false; $("regForm").reset(); setMsg("rMsg", "");
   } catch (err) { tiketBaru = false; setMsg("rMsg", pesanError(err), "err"); }
+}
+
+/* ---------- pertama kali masuk (data peserta diimpor panitia) ---------- */
+let modePertama = false;
+function aturModePertama(nyala) {
+  modePertama = nyala;
+  $("lWaBox").hidden = !nyala;
+  $("lPinLbl").textContent = nyala ? "Buat PIN baru (minimal 6 karakter)" : "PIN";
+  $("lPin").placeholder = nyala ? "PIN untuk masuk berikutnya" : "PIN yang dibuat saat mendaftar";
+  $("lPin").autocomplete = nyala ? "new-password" : "current-password";
+  $("lKirim").textContent = nyala ? "Aktifkan & masuk" : "Masuk";
+  $("lPertama").textContent = nyala ? "Sudah pernah masuk? Kembali ke Masuk biasa" : "Datamu sudah diinput panitia? Pertama kali masuk di sini";
+  setMsg("lMsg", nyala ? "Isi NIM (atau nomor WA untuk dosen/peserta luar) yang diberikan ke panitia, nomor WhatsApp, lalu buat PIN." : "");
+}
+$("lPertama").addEventListener("click", () => aturModePertama(!modePertama));
+
+/** Hubungkan akun login baru dengan data peserta hasil impor panitia. */
+async function klaim(user, id, data, waId) {
+  const hpBaru = "0" + waId.slice(4);
+  if (data.uid) { await signOut(auth); return { ok: false, pesan: "Data ini sudah dipakai akun lain. Hubungi panitia." }; }
+  if (data.hp && data.hp !== hpBaru) {
+    await deleteUser(user).catch(() => signOut(auth));
+    return { ok: false, pesan: "Nomor WhatsApp tidak cocok dengan data dari panitia. Pakai nomor yang kamu berikan ke panitia, atau hubungi panitia bila nomormu berubah." };
+  }
+  try {
+    tiketBaru = true;
+    await updateDoc(doc(db, "peserta", id), { uid: user.uid, klaim: hpBaru, hp: data.hp || hpBaru, ...(data.tiket ? {} : { tiket: kodeAcak(8) }) });
+    return { ok: true };
+  } catch (err) {
+    tiketBaru = false;
+    await deleteUser(user).catch(() => signOut(auth));
+    return { ok: false, pesan: err?.code === "permission-denied" ? "Nomor WhatsApp tidak cocok dengan data dari panitia." : pesanError(err) };
+  }
+}
+
+async function aktivasi() {
+  const mhs = kategori === "mahasiswa";
+  const id = (mhs ? bersihkanNim($("lNim").value) : idDariWa($("lNim").value)).toLowerCase();
+  const pin = $("lPin").value, waId = idDariWa($("lWa").value || (!mhs ? $("lNim").value : ""));
+  if (!id) return setMsg("lMsg", mhs ? "Isi NIM kamu." : "Isi nomor WhatsApp yang benar (mis. 0812…).", "err");
+  if (!waId) return setMsg("lMsg", "Isi nomor WhatsApp yang benar (mis. 0812…) untuk verifikasi.", "err");
+  if (pin.length < 6) return setMsg("lMsg", "Buat PIN minimal 6 karakter.", "err");
+  setMsg("lMsg", "Mengaktifkan akun…");
+  sedangDaftar = true;
+  let cred;
+  try { cred = await createUserWithEmailAndPassword(auth, emailNim(id), pin); }
+  catch (err) {
+    sedangDaftar = false;
+    return setMsg("lMsg", err?.code === "auth/email-already-in-use" ? "Akun ini sudah aktif. Masuk dengan PIN yang dulu kamu buat (pilih \"Kembali ke Masuk biasa\")." : pesanError(err), "err");
+  }
+  const snap = await getDoc(doc(db, "peserta", id)).catch(() => null);
+  if (!snap?.exists()) {
+    await deleteUser(cred.user).catch(() => signOut(auth));
+    sedangDaftar = false;
+    return setMsg("lMsg", `${mhs ? "NIM" : "Nomor WhatsApp"} ini belum ada di daftar peserta dari panitia. Periksa lagi, atau daftar sendiri di tab Daftar.`, "err");
+  }
+  const hasil = await klaim(cred.user, id, snap.data(), waId);
+  sedangDaftar = false;
+  if (!hasil.ok) return setMsg("lMsg", hasil.pesan, "err");
+  $("loginForm").reset(); aturModePertama(false);
 }

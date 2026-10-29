@@ -1,6 +1,6 @@
 // Kartu ucapan selesai membaca: selfie + logo acara, siap disimpan atau dibagikan ke Story/Feed.
 // Peserta bisa memilih 5 desain, filter foto, dan kutipan. Semua digambar di <canvas> di perangkat peserta.
-import { $, esc, rentangJuz, paletTema, hexValid } from "./common.js";
+import { $, esc, rentangJuz, paletTema, hexValid, namaPanggil } from "./common.js";
 
 const UKURAN = { story: { w: 1080, h: 1920 }, feed: { w: 1080, h: 1350 } };
 const TINTA = "#151515", REDUP = "#6f6f69", PUTIH = "#ffffff", EMAS = "#d9b45a", EMAS_MUDA = "#f3e6c4";
@@ -29,7 +29,7 @@ export async function bukaKartu(data, acara) {
   const ingat = bacaPilihan();
   state = { data, acara: acara || {}, format: ingat.format || "story", template: TEMPLATE[ingat.template] ? ingat.template : "minimal",
     filter: "asli", kutipan: KUTIPAN[ingat.kutipan] ? ingat.kutipan : "shadaqa", fotoAsli: null, foto: null, logo: null };
-  $("kJudul").textContent = `Selamat, ${String(data.nama).replace(/^Contoh:\s*/, "").split(" ")[0]}!`;
+  $("kJudul").textContent = `Selamat, ${namaPanggil(data.nama)}!`;
   $("kTeks").textContent = `Juz ${data.juz} (${rentangJuz(data.juz)}) sudah tuntas. Pilih desain, tambahkan selfie, lalu simpan atau bagikan.`;
   $("kartu").hidden = false;
   document.body.style.overflow = "hidden";

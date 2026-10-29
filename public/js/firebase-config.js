@@ -1,12 +1,12 @@
 // GANTI isi objek ini dengan konfigurasi dari Firebase Console:
 // Project settings → General → Your apps → Web app → SDK setup and configuration → Config
 export const firebaseConfig = {
-  apiKey: "AIzaSyB8EgX23B31S2Uolu-D_TPXcbYAuDQ0cFc",
-  authDomain: "khatmil-quran-fu.firebaseapp.com",
-  projectId: "khatmil-quran-fu",
-  storageBucket: "khatmil-quran-fu.firebasestorage.app",
-  messagingSenderId: "917640735506",
-  appId: "1:917640735506:web:aea3be3a078db0af0161cb"
+  apiKey: "GANTI_API_KEY",
+  authDomain: "GANTI_PROJECT_ID.firebaseapp.com",
+  projectId: "GANTI_PROJECT_ID",
+  storageBucket: "GANTI_PROJECT_ID.appspot.com",
+  messagingSenderId: "GANTI_SENDER_ID",
+  appId: "GANTI_APP_ID"
 };
 
 // Domain semu untuk akun peserta. NIM 11210340000123 menjadi akun

@@ -315,3 +315,10 @@ export async function mulaiPindai(video, onTeks, { hadap = "environment" } = {})
   pindai();
   return () => { jalan = false; aliran.getTracks().forEach(t => t.stop()); video.srcObject = null; };
 }
+
+/** Nama sapaan: kata pertama nama, melewati gelar seperti Dr., Hj., Prof., KH. */
+export function namaPanggil(nama) {
+  const k = String(nama || "").replace(/^Contoh:\s*/, "").split(/\s+/).filter(Boolean);
+  const gelar = /^(dr|drs|dra|hj|h|prof|kh|ust|ustadz|ustazah|ustadzah|ir|nyai|gus|ning|habib|syekh|sy)\.?,?$/i;
+  return k.find(w => !gelar.test(w) && !/\.$/.test(w)) || k[0] || "";
+}
