@@ -202,7 +202,7 @@ export const ikon = (n, ukuran = 20) => `<svg class="i" viewBox="0 0 24 24" widt
 export const inisial = nama => String(nama || "?").replace(/^Contoh:\s*/, "").split(/\s+/).filter(Boolean).slice(0, 2).map(k => k[0]).join("").toUpperCase();
 
 /* ---------- program studi ---------- */
-export const PRODI = ["Ilmu Al-Qur'an dan Tafsir", "Ilmu Hadis", "Akidah dan Filsafat Islam", "Studi Agama-Agama", "Magister Ilmu Al-Qur'an dan Tafsir", "Magister Studi Agama-Agama"];
+export const PRODI = ["Ilmu Al-Qur'an dan Tafsir", "Ilmu Hadis", "Akidah dan Filsafat Islam", "Studi Agama-Agama", "Ilmu Tasawuf", "Magister Ilmu Al-Qur'an dan Tafsir", "Magister Studi Agama-Agama"];
 
 /* ---------- kehadiran ---------- */
 const HURUF_KODE = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";   // tanpa huruf/angka yang mirip (0/O, 1/I/L)

@@ -1,6 +1,6 @@
 import { onAuthStateChanged, signInWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
 import { doc, getDoc, setDoc, updateDoc, deleteDoc, writeBatch, collection, onSnapshot } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
-import { terapkanTema, WARNA_PRESET, hexValid, kelompok, tampilId, kodeAcak, idHadir, keCSV, bacaCSV, unduhBerkas, muatSkrip, KATEGORI, idDariWa, bersihkanNim, bersihkanKode, bacaTiket, mulaiPindai, URL_QR_LIB } from "./common.js";
+import { terapkanTema, WARNA_PRESET, hexValid, kelompok, tampilId, kodeAcak, idHadir, keCSV, bacaCSV, unduhBerkas, muatSkrip, KATEGORI, idDariWa, bersihkanNim, bersihkanKode, bacaTiket, mulaiPindai, URL_QR_LIB, inisial } from "./common.js";
 import { auth, db, configBelumDiisi, isAkunPeserta, rentangJuz, $, esc, lalu, setMsg, pesanError, kosongkanJuz, ringkas } from "./common.js";
 
 let bacaan = [], peserta = [], acara = {}, unsub = [];
@@ -18,6 +18,7 @@ function tampil(mode) {
 
 onAuthStateChanged(auth, async user => {
   unsub.forEach(f => f()); unsub = [];
+  if (!$("screen").hidden) tutupLayar();
   if (!user) return tampil("login");
   if (isAkunPeserta(user)) { tampil("login"); return setMsg("lMsg", "Akun peserta tidak bisa membuka dasbor panitia.", "err"); }
   let admin = false, galat = null;
@@ -41,6 +42,7 @@ onAuthStateChanged(auth, async user => {
     acara = s.exists() ? s.data() : {};
     $("evName").textContent = acara.nama || "Khatmil Qur'an";
     $("scName").textContent = acara.nama || "Khatmil Qur'an";
+    renderLayar();
     if (document.activeElement !== $("sName")) $("sName").value = acara.nama || "";
     if (document.activeElement !== $("sSub")) $("sSub").value = acara.sub || "";
     if (document.activeElement !== $("sTagar")) $("sTagar").value = acara.tagar || "";
@@ -106,6 +108,7 @@ function render() {
     : `<li class="empty">Belum ada juz yang selesai.</li>`;
 
   renderPeserta();
+  renderLayar();
 }
 
 function renderPeserta() {
@@ -149,9 +152,9 @@ $("setForm").addEventListener("submit", async e => {
   catch (err) { setMsg("sMsg", pesanError(err), "err"); }
 });
 
-$("screenBtn").addEventListener("click", () => { $("screen").hidden = false; document.documentElement.requestFullscreen?.().catch(() => {}); });
-$("screenExit").addEventListener("click", () => { $("screen").hidden = true; if (document.fullscreenElement) document.exitFullscreen().catch(() => {}); });
-document.addEventListener("keydown", e => { if (e.key === "Escape") $("screen").hidden = true; });
+$("screenBtn").addEventListener("click", bukaLayar);
+$("screenExit").addEventListener("click", tutupLayar);
+document.addEventListener("keydown", e => { if (e.key === "Escape" && !$("screen").hidden) tutupLayar(); });
 
 $("csvBtn").addEventListener("click", () => {
   const sel = v => `"${String(v ?? "").replace(/"/g, '""')}"`;
@@ -247,6 +250,7 @@ function renderHadir() {
       <td><button class="btn-link" data-hapus="${esc(h._id)}" type="button">Hapus</button></td></tr>`).join("")
     : `<tr><td colspan="7" class="empty">${hadirList.length ? "Tidak ada yang cocok." : "Belum ada yang check-in."}</td></tr>`;
   if (qrKode) $("qrJumlah").textContent = jumlah[qrKode] || 0;
+  renderLayar();
 }
 const barisHadir = f => hadirList.filter(h => !f || h.sesi === f).sort((a, b) => (b.waktu || 0) - (a.waktu || 0));
 $("hFilter").addEventListener("change", renderHadir);
@@ -434,3 +438,94 @@ $("hScanTiket").addEventListener("click", bukaScanTiket);
 $("sSelesai").addEventListener("click", tutupScanTiket);
 $("sManual").addEventListener("submit", async e => { e.preventDefault(); const v = $("sId").value.trim(); if (!v) return; await prosesTiket(v, true); $("sId").value = ""; });
 document.addEventListener("visibilitychange", () => { if (document.hidden && !$("sTiket").hidden) tutupScanTiket(); });
+
+/* ---------- layar acara (proyektor): tab check-in, juz dibaca, khatam ---------- */
+let layarTab = "hadir", layarSesi = null, putarTimer = null, sudahLihat = null, sambutTimer = null, qrLayarKode = null;
+const sorot = new Map();     // id kehadiran -> sampai kapan disorot sebagai "baru"
+const namaBersih = n => String(n || "").replace(/^Contoh:\s*/, "");
+const namaPendek = n => { const k = namaBersih(n).split(/\s+/); return k.find(w => !/\.$/.test(w)) || k[0] || ""; };
+const jam = t => t ? new Date(t).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" }) : "";
+function bukaLayar() { $("screen").hidden = false; document.documentElement.requestFullscreen?.().catch(() => {}); sudahLihat = null; layarSesi = null; qrLayarKode = null; gantiTab(layarTab); }
+function tutupLayar() {
+  $("screen").hidden = true; clearInterval(putarTimer); putarTimer = null; $("scPutar").setAttribute("aria-pressed", "false");
+  if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+}
+function gantiTab(t) {
+  layarTab = t;
+  document.querySelectorAll(".layar-tab [data-tab]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.tab === t)));
+  document.querySelectorAll("#screen [data-panel]").forEach(p => { p.hidden = p.dataset.panel !== t; });
+  renderLayar();
+}
+document.querySelector(".layar-tab").addEventListener("click", e => { const b = e.target.closest("[data-tab]"); if (b) gantiTab(b.dataset.tab); });
+$("scSesi").addEventListener("change", e => { layarSesi = e.target.value; qrLayarKode = null; sudahLihat = null; renderLayar(); });
+$("scPutar").addEventListener("click", () => {
+  const nyala = !putarTimer;
+  $("scPutar").setAttribute("aria-pressed", String(nyala));
+  if (nyala) { const urut = ["hadir", "juz", "khatam"]; putarTimer = setInterval(() => gantiTab(urut[(urut.indexOf(layarTab) + 1) % urut.length]), 15000); }
+  else { clearInterval(putarTimer); putarTimer = null; }
+});
+
+function itemFeed(nama, ket, waktu, baru) {
+  return `<li class="${baru ? "baru" : ""}"><span class="avatar">${esc(inisial(nama))}</span><div style="min-width:0"><b>${esc(namaBersih(nama))}</b><span>${esc(ket)}</span></div><span class="wkt">${jam(waktu)}</span></li>`;
+}
+async function renderLayar() {
+  if ($("screen").hidden) return;
+  $("scSub").textContent = acara.sub || "";
+  const kini = Date.now();
+
+  // --- check-in ---
+  if (layarSesi === null) layarSesi = sesiList.find(x => x.aktif)?.kode || "";
+  $("scSesi").innerHTML = `<option value="">Semua sesi</option>` + sesiList.map(x => `<option value="${x.kode}">${esc(x.nama)}${x.aktif ? "" : " (ditutup)"}</option>`).join("");
+  $("scSesi").value = sesiList.some(x => x.kode === layarSesi) ? layarSesi : "";
+  const sesi = sesiList.find(x => x.kode === layarSesi);
+  const rows = hadirList.filter(h => !layarSesi || h.sesi === layarSesi).sort((a, b) => (b.waktu || 0) - (a.waktu || 0));
+  $("scHadir").textContent = rows.length;
+  $("scHadirKet").textContent = sesi ? sesi.nama : "semua sesi";
+  const baru = sudahLihat ? rows.filter(h => !sudahLihat.has(h._id)) : [];
+  sudahLihat = new Set(hadirList.map(h => h._id));
+  baru.forEach(h => sorot.set(h._id, kini + 8000));
+  $("scFeed").innerHTML = rows.slice(0, 12).map(h => itemFeed(h.nama, [h.prodi, h.instansi].filter(Boolean).join(" · "), h.waktu, (sorot.get(h._id) || 0) > kini)).join("")
+    || `<li style="grid-template-columns:1fr"><span>Belum ada yang check-in. Nama peserta akan muncul di sini begitu mereka check-in.</span></li>`;
+  if (baru.length) {
+    const h = baru[0], lain = baru.length - 1;
+    $("scSambut").innerHTML = `<small>Selamat datang</small>${esc(namaBersih(h.nama))}${lain ? ` <small style="display:inline">dan ${lain} lainnya</small>` : ""}`;
+    $("scSambut").hidden = false; clearTimeout(sambutTimer); sambutTimer = setTimeout(() => { $("scSambut").hidden = true; }, 5000);
+  }
+  $("scQrBox").hidden = !(sesi && sesi.aktif);
+  if (sesi && sesi.aktif && qrLayarKode !== sesi.kode) {
+    qrLayarKode = sesi.kode; $("scKode").textContent = sesi.kode;
+    try { await muatSkrip(URL_QR_LIB); const qr = window.qrcode(0, "M"); qr.addData(tautanHadir(sesi.kode)); qr.make(); $("scQr").innerHTML = qr.createSvgTag({ cellSize: 6, margin: 1, scalable: true }); }
+    catch { $("scQr").innerHTML = ""; }
+  }
+
+  // --- juz dibaca ---
+  const R = ringkas(bacaan);
+  const belum = R.putaranList.filter(p => R.selesaiDi(p) < 30);
+  const pj = belum[0] ?? (R.putaranList.length ? R.putaranList[R.putaranList.length - 1] + 1 : 1);
+  const per = R.per[pj] || {};
+  let html = "", dibacaPj = 0;
+  for (let j = 1; j <= 30; j++) {
+    const r = per[j], cls = r ? (r.status === "selesai" ? "done" : "busy") : "";
+    if (r && r.status !== "selesai") dibacaPj++;
+    html += `<div class="${cls}"><b>${j}</b><span>${r ? esc(namaPendek(r.nama)) : "&nbsp;"}</span></div>`;
+  }
+  $("scGrid").innerHTML = html;
+  $("scPutaran").textContent = `Putaran ${pj}`;
+  $("scPutaranKet").textContent = `${R.selesaiDi(pj)}/30 selesai · ${dibacaPj} dibaca`;
+  const selesai = bacaan.filter(r => r.status === "selesai").sort((a, b) => (b.selesai || 0) - (a.selesai || 0));
+  $("scSelesai").innerHTML = selesai.slice(0, 10).map(r => itemFeed(r.nama, `Juz ${r.juz} · ${rentangJuz(r.juz)}`, r.selesai, kini - (r.selesai || 0) < 60000)).join("")
+    || `<li style="grid-template-columns:1fr"><span>Belum ada juz yang selesai.</span></li>`;
+
+  // --- khatam ---
+  const pct = Math.round(R.selesaiDi(pj) / 30 * 100);
+  $("scKhatam").textContent = R.khatam;
+  $("scArc").setAttribute("stroke-dasharray", `${(pct / 100 * 314.16).toFixed(1)} 314.16`);
+  $("scPct").textContent = pct + "%";
+  $("scKhatamBerikut").textContent = `Menuju khatam ke-${R.khatam + 1}`;
+  $("scKhatamKet").textContent = `Putaran ${pj}: ${R.selesaiDi(pj)} dari 30 juz selesai, ${dibacaPj} sedang dibaca.`;
+  $("scJuz").textContent = R.juzSelesai;
+  $("scPembaca").textContent = R.pembaca;
+  $("scDibaca").textContent = R.dibaca;
+  const awalHari = new Date(); awalHari.setHours(0, 0, 0, 0);
+  $("scHadirTot").textContent = hadirList.filter(h => (h.waktu || 0) >= awalHari.getTime()).length;
+}
