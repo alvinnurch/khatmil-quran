@@ -38,6 +38,7 @@ onAuthStateChanged(auth, async user => {
   unsub.push(onSnapshot(collection(db, "peserta"), s => { peserta = s.docs.map(d => d.data()); render(); }));
   unsub.push(onSnapshot(collection(db, "sesi"), s => { sesiList = s.docs.map(d => ({ ...d.data(), kode: d.id })).sort((a, b) => (b.dibuat || 0) - (a.dibuat || 0)); renderHadir(); }));
   unsub.push(onSnapshot(collection(db, "hadir"), s => { hadirList = s.docs.map(d => ({ ...d.data(), _id: d.id })); renderHadir(); }));
+  unsub.push(onSnapshot(doc(db, "pengaturan", "juz"), s => { gerbang = s.exists() ? s.data() : {}; renderGerbang(); }));
   unsub.push(onSnapshot(doc(db, "pengaturan", "acara"), s => {
     acara = s.exists() ? s.data() : {};
     $("evName").textContent = acara.nama || "Khatmil Qur'an";
@@ -595,7 +596,8 @@ const AKSI = {
       await hapusBanyak([...bacaan.map(r => doc(db, "bacaan", r._id)), ...hadirList.map(h => doc(db, "hadir", h._id)),
         ...sesiList.map(x => doc(db, "sesi", x.kode)), ...peserta.map(p => doc(db, "peserta", p.nim))]);
       await setDoc(doc(db, "state", "alokasi"), STATE_AWAL);
-      return ringkasan;
+      await setDoc(doc(db, "pengaturan", "juz"), { dibuka: false, diubah: Date.now() });
+      return ringkasan + " Pengambilan juz ditutup kembali.";
     },
   },
 };
@@ -701,4 +703,28 @@ $("pImpor").addEventListener("change", async e => {
     if (lewat.length) info.push(`${lewat.length} dilewati (${lewat.slice(0, 3).join("; ")}${lewat.length > 3 ? "; …" : ""})`);
     setMsg("pMsg", info.join(" · ") + "." + (tulis.length ? ' Kirim tautan masuk lewat tombol "Kirim tiket" di tabel.' : ""), tulis.length ? "ok" : "err");
   } catch (err) { setMsg("pMsg", "Impor gagal: " + pesanError(err), "err"); }
+});
+
+/* ---------- gerbang pengambilan juz ---------- */
+let gerbang = {};
+function renderGerbang() {
+  const buka = gerbang.dibuka === true;
+  $("gerbang").classList.toggle("buka", buka);
+  $("gChip").innerHTML = `<i style="background:${buka ? "var(--done)" : "var(--busy)"}"></i>${buka ? "Dibuka" : "Ditutup"}`;
+  $("gJudul").textContent = buka ? "Pengambilan juz sedang dibuka" : "Pengambilan juz masih ditutup";
+  const kapan = gerbang.diubah ? ` sejak ${new Date(gerbang.diubah).toLocaleString("id-ID", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}` : "";
+  $("gKet").textContent = buka
+    ? `Peserta bisa mengambil juz${kapan}. Menutup hanya menghentikan pengambilan baru; yang sedang membaca tetap bisa melapor selesai.`
+    : `Peserta sudah bisa masuk, check-in, dan melihat tiket, tapi belum bisa mengambil juz${kapan}. Buka saat acara dimulai.`;
+  const t = $("gTombol");
+  t.disabled = false; delete t.dataset.armed;
+  t.textContent = buka ? "Tutup pengambilan juz" : "Buka pengambilan juz";
+  t.className = buka ? "btn-ghost" : "btn";
+}
+$("gTombol").addEventListener("click", async e => {
+  const t = e.currentTarget, buka = gerbang.dibuka === true;
+  if (!t.dataset.armed) { t.dataset.armed = "1"; t.textContent = buka ? "Yakin tutup?" : "Ya, buka sekarang"; return; }
+  t.disabled = true; setMsg("gMsg", "");
+  try { await setDoc(doc(db, "pengaturan", "juz"), { dibuka: !buka, diubah: Date.now() }); }
+  catch (err) { setMsg("gMsg", pesanError(err), "err"); renderGerbang(); }
 });

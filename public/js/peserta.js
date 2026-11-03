@@ -30,6 +30,10 @@ let kodeTunda = (() => {
 
 if (configBelumDiisi) $("cfgNote").hidden = false;
 
+// Gerbang pengambilan juz: dibuka/ditutup panitia. Satu dokumen kecil, aman dipantau langsung.
+let juzDibuka = false, gerbangDimuat = false;
+onSnapshot(doc(db, "pengaturan", "juz"), s => { juzDibuka = s.exists() && s.data().dibuka === true; gerbangDimuat = true; render(); }, () => {});
+
 onSnapshot(doc(db, "pengaturan", "acara"), s => {
   const d = acara = s.exists() ? s.data() : {};
   $("evLogo").hidden = !d.logo; if (d.logo) $("evLogo").src = $("evLogo2").src = d.logo;
@@ -123,6 +127,13 @@ function render() {
         <button class="ibtn" id="doneBtn" type="button" title="Tandai selesai" aria-label="Tandai selesai">${ikon("cek")}</button>
         <button class="btn-link" id="returnBtn" type="button">Kembalikan juz</button></div>
       <div class="msg" id="aMsg" role="status"></div>`;
+  } else if (!juzDibuka) {
+    $("assign").innerHTML = `
+      <span class="chip"><i style="background:var(--busy)"></i>${gerbangDimuat ? "Belum dibuka" : "Memeriksa…"}</span>
+      <div><h1 style="font-size:clamp(28px,6vw,40px)">Pengambilan juz belum dibuka</h1>
+        <p style="margin:8px 0 0;color:var(--accent-ink);opacity:.8;font-size:14px">Panitia akan membukanya saat acara dimulai. Halaman ini berubah sendiri, tidak perlu dimuat ulang.</p></div>
+      <div class="row"><button class="btn pil-ikon" type="button" disabled>Ambil juz <span class="bulat">${ikon("jam", 16)}</span></button></div>
+      <div class="msg" id="aMsg" role="status"></div>`;
   } else {
     $("assign").innerHTML = `
       <span class="chip"><i></i>Putaran ke-${putaranAktif} sedang berjalan</span>
@@ -214,6 +225,7 @@ $("logout").addEventListener("click", () => signOut(auth));
 // Coba ulang otomatis dengan jeda acak supaya peserta cukup menunggu, tidak perlu menekan berulang.
 const KODE_ULANG = new Set(["bentrok", "aborted", "failed-precondition", "unavailable", "resource-exhausted", "deadline-exceeded", "cancelled"]);
 async function ambilJuz() {
+  if (!juzDibuka) return setMsg("aMsg", "Pengambilan juz belum dibuka panitia.", "err");
   const btn = $("takeBtn"); if (btn) btn.disabled = true;
   setMsg("aMsg", "Mencarikan juz…");
   const sudah = new Set(mine.map(r => r.juz));      // utamakan juz yang belum pernah dibaca peserta ini
@@ -223,7 +235,8 @@ async function ambilJuz() {
       setMsg("aMsg", ""); muatStatus(true); return;
     } catch (err) {
       if (!KODE_ULANG.has(err?.code) || coba === 10) {
-        setMsg("aMsg", KODE_ULANG.has(err?.code) ? "Antrean sedang sangat ramai. Tunggu sebentar lalu tekan Ambil juz lagi." : pesanError(err), "err");
+        setMsg("aMsg", KODE_ULANG.has(err?.code) ? "Antrean sedang sangat ramai. Tunggu sebentar lalu tekan Ambil juz lagi."
+          : err?.code === "permission-denied" ? "Pengambilan juz sedang ditutup panitia." : pesanError(err), "err");
         const b = $("takeBtn"); if (b) b.disabled = false;
         return;
       }
