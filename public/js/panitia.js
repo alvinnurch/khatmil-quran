@@ -64,7 +64,7 @@ function render() {
   $("tPeserta").textContent = peserta.length;
   $("tPembaca").textContent = R.pembaca;
   const sisa = 30 - (R.juzSelesai % 30);
-  // Khatam dihitung per putaran: satu putaran terhitung khatam hanya jika Juz 1–30 semuanya selesai.
+  // Putaran di sini sudah disusun ulang (lihat ringkas): yang selesai terakumulasi lebih dulu.
   // Yang dipantau di sini adalah putaran tertua yang belum lengkap, karena itulah khatam berikutnya.
   const belum = R.putaranList.filter(p => R.selesaiDi(p) < 30);
   const pj = belum[0] ?? (R.putaranList.length ? R.putaranList[R.putaranList.length - 1] + 1 : 1);
@@ -96,7 +96,7 @@ function render() {
   // sedang dibaca
   const sibuk = bacaan.filter(r => r.status === "membaca").sort((a, b) => (a.ambil || 0) - (b.ambil || 0));
   $("busyList").innerHTML = sibuk.length ? sibuk.map(r =>
-    `<li><span><b>${esc(r.nama)}</b> · Juz ${r.juz} <span class="muted">(putaran ${r.putaran}) · ${esc(tampilId(r))} · diambil ${lalu(r.ambil)}</span></span><button class="btn-ghost btn-sm" data-release="${esc(r._id)}" type="button">Lepaskan</button></li>`).join("")
+    `<li><span><b>${esc(r.nama)}</b> · Juz ${r.juz} <span class="muted">(putaran ${r.putaranTampil || r.putaran}) · ${esc(tampilId(r))} · diambil ${lalu(r.ambil)}</span></span><button class="btn-ghost btn-sm" data-release="${esc(r._id)}" type="button">Lepaskan</button></li>`).join("")
     : `<li class="empty">Tidak ada juz yang sedang dibaca.</li>`;
 
   // per prodi

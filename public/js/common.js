@@ -124,9 +124,20 @@ export async function kosongkanJuz(bacaanId) {
 }
 
 /** Ringkasan dari seluruh dokumen bacaan. */
+/*  Khataman dihitung dari juz yang SUDAH SELESAI, terakumulasi lintas putaran pengambilan.
+ *  Untuk tiap juz, bacaan yang selesai disusun lebih dulu (urut waktu selesai), baru yang masih
+ *  dibaca. Jadi juz yang belum selesai tidak menahan putaran lain: ia otomatis berada di putaran
+ *  yang belum terhitung khatam. Jumlah khatam = jumlah selesai paling sedikit di antara Juz 1–30.
+ *  Kolom `putaran` di dokumen bacaan tetap dipakai untuk pembagian juz; `putaranTampil` untuk hitungan. */
 export function ringkas(rows) {
+  const perJuz = {};
+  for (const r of rows) (perJuz[r.juz] ??= []).push(r);
   const per = {};
-  for (const r of rows) (per[r.putaran] ??= {})[r.juz] = r;
+  for (const [j, list] of Object.entries(perJuz)) {
+    list.sort((a, b) => (a.status === "selesai" ? 0 : 1) - (b.status === "selesai" ? 0 : 1)
+      || (a.status === "selesai" ? (a.selesai || 0) - (b.selesai || 0) : (a.ambil || 0) - (b.ambil || 0)));
+    list.forEach((r, i) => { r.putaranTampil = i + 1; (per[i + 1] ??= {})[j] = r; });
+  }
   const putaranList = Object.keys(per).map(Number).sort((a, b) => a - b);
   const selesaiDi = p => Object.values(per[p] || {}).filter(r => r.status === "selesai").length;
   const khatam = putaranList.filter(p => selesaiDi(p) === 30).length;
